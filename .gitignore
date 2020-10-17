@@ -18,7 +18,9 @@ __pycache__/
 /model/__pycache__/
 
 
-/yolov3_r50vd_dcn_obj365_dropblock_iouloss/
+/external/DCNv2/_ext.cp36-win_amd64.pyd
+/external/DCNv2/build/
+/external/DCNv2/DCNv2.egg-info/
 /inference_model/
 /output/
 
