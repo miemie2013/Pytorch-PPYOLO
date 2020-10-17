@@ -52,7 +52,7 @@ python setup.py build develop
 ```
 
 ## 训练
-下载我从PaddleDetection的仓库保存下来的pytorch模型yolov4.pt
+下载我从PaddleDetection的仓库保存下来的pytorch模型ppyolo_2x.pt
 链接：https://pan.baidu.com/s/18ZUQMWF7qPJ7K7xqx1VnpQ 
 提取码：6hph 
 
@@ -78,8 +78,6 @@ xxx.jpg 48,240,195,371,11 8,12,352,498,14
 
 ## 评估
 训练时默认每5000步计算一次验证集的mAP。或者运行eval.py评估指定模型的mAP。该mAP是val集的结果。
-
-该mAP是test集的结果，也就是大部分检测算法论文的标准指标。有点谜，根据我之前的经验test集的mAP和val集的mAP应该是差不多的。原因已经找到，由于原版YOLO v4使用coco trainval2014进行训练，训练样本中包含部分评估样本，若使用val集会导致精度虚高。
 
 ## 预测
 运行demo.py。
