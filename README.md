@@ -56,6 +56,23 @@ python setup.py build develop
 链接：https://pan.baidu.com/s/18ZUQMWF7qPJ7K7xqx1VnpQ 
 提取码：6hph 
 
+该模型在COCO2017 val集的mAP如下
+```
+Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.448
+Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.649
+Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.492
+Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.265
+Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.483
+Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.593
+Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.337
+Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.571
+Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.624
+Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.420
+Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.665
+Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.773
+```
+
+
 将它放在项目根目录下。
 运行train.py进行训练。通过修改config/ppyolo_2x.py代码来进行更换数据集、更改超参数以及训练参数。
 
