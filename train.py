@@ -7,19 +7,10 @@
 #   Description : pytorch_ppyolo
 #
 # ================================================================
-import cv2
 from collections import deque
-import math
-import json
 import time
 import threading
 import datetime
-import shutil
-import tempfile
-import paddle.fluid.layers as L
-import random
-import copy
-import numpy as np
 from collections import OrderedDict
 import os
 import argparse

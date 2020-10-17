@@ -14,9 +14,6 @@ import torch as T
 import torch.nn.functional as F
 import copy
 
-from paddle import fluid
-import paddle.fluid.layers as L
-
 from model.custom_layers import Conv2dUnit
 from model.matrix_nms import matrix_nms
 
