@@ -52,7 +52,7 @@ python setup.py build develop
 ```
 
 ## 训练
-下载我从Tianxiaomo的仓库保存下来的pytorch模型yolov4.pt
+下载我从PaddleDetection的仓库保存下来的pytorch模型yolov4.pt
 链接：https://pan.baidu.com/s/18ZUQMWF7qPJ7K7xqx1VnpQ 
 提取码：6hph 
 
