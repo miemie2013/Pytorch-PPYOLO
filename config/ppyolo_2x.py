@@ -54,6 +54,7 @@ class PPYOLO_2x_Config(object):
             model_path='ppyolo_2x.pt',
             # model_path='./weights/step00010000.pt',
             target_size=608,
+            # target_size=320,
             draw_image=True,
             draw_thresh=0.15,   # 如果draw_image==True，那么只画出分数超过draw_thresh的物体的预测框。
         )

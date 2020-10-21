@@ -38,9 +38,7 @@ class Decode(object):
 
 
     # 处理一张图片
-    def detect_image(self, image, draw_image, draw_thresh=0.0):
-        pimage, im_size = self.process_image(np.copy(image))
-
+    def detect_image(self, image, pimage, im_size, draw_image, draw_thresh=0.0):
         pred = self.predict(pimage, im_size)   # [bs, M, 6]
         if pred[0][0][0] < 0.0:
             boxes = np.array([])

@@ -12,6 +12,7 @@ import datetime
 import cv2
 import os
 import time
+import threading
 import argparse
 
 from config import *
@@ -33,6 +34,28 @@ args = parser.parse_args()
 config_file = args.config
 use_gpu = args.use_gpu
 
+
+def read_test_data(path_dir,
+                   _decode,
+                   test_dic):
+    for k, filename in enumerate(path_dir):
+        key_list = list(test_dic.keys())
+        key_len = len(key_list)
+        while key_len >= 3:
+            time.sleep(0.01)
+            key_list = list(test_dic.keys())
+            key_len = len(key_list)
+
+        image = cv2.imread('images/test/' + filename)
+        pimage, im_size = _decode.process_image(np.copy(image))
+        dic = {}
+        dic['image'] = image
+        dic['pimage'] = pimage
+        dic['im_size'] = im_size
+        test_dic['%.8d' % k] = dic
+
+def save_img(filename, image):
+    cv2.imwrite('images/res/' + filename, image)
 
 if __name__ == '__main__':
     cfg = None
@@ -67,16 +90,32 @@ if __name__ == '__main__':
     _decode = Decode(ppyolo, all_classes, use_gpu, cfg, for_test=True)
 
     if not os.path.exists('images/res/'): os.mkdir('images/res/')
-
-
     path_dir = os.listdir('images/test')
+
+    # 读数据的线程
+    test_dic = {}
+    thr = threading.Thread(target=read_test_data,
+                           args=(path_dir,
+                                 _decode,
+                                 test_dic))
+    thr.start()
+
+    key_list = list(test_dic.keys())
+    key_len = len(key_list)
+    while key_len == 0:
+        time.sleep(0.01)
+        key_list = list(test_dic.keys())
+        key_len = len(key_list)
+    dic = test_dic['%.8d' % 0]
+    image = dic['image']
+    pimage = dic['pimage']
+    im_size = dic['im_size']
+
+
     # warm up
     if use_gpu:
-        for k, filename in enumerate(path_dir):
-            image = cv2.imread('images/test/' + filename)
-            image, boxes, scores, classes = _decode.detect_image(image, draw_image=False)
-            if k == 10:
-                break
+        for k in range(10):
+            image, boxes, scores, classes = _decode.detect_image(image, pimage, im_size, draw_image=False)
 
 
     time_stat = deque(maxlen=20)
@@ -85,8 +124,18 @@ if __name__ == '__main__':
     num_imgs = len(path_dir)
     start = time.time()
     for k, filename in enumerate(path_dir):
-        image = cv2.imread('images/test/' + filename)
-        image, boxes, scores, classes = _decode.detect_image(image, draw_image, draw_thresh)
+        key_list = list(test_dic.keys())
+        key_len = len(key_list)
+        while key_len == 0:
+            time.sleep(0.01)
+            key_list = list(test_dic.keys())
+            key_len = len(key_list)
+        dic = test_dic.pop('%.8d' % k)
+        image = dic['image']
+        pimage = dic['pimage']
+        im_size = dic['im_size']
+
+        image, boxes, scores, classes = _decode.detect_image(image, pimage, im_size, draw_image, draw_thresh)
 
         # 估计剩余时间
         start_time = end_time
@@ -98,7 +147,8 @@ if __name__ == '__main__':
 
         logger.info('Infer iter {}, num_imgs={}, eta={}.'.format(k, num_imgs, eta))
         if draw_image:
-            cv2.imwrite('images/res/' + filename, image)
+            t2 = threading.Thread(target=save_img, args=(filename, image))
+            t2.start()
             logger.info("Detection bbox results save in images/res/{}".format(filename))
     cost = time.time() - start
     logger.info('total time: {0:.6f}s'.format(cost))
