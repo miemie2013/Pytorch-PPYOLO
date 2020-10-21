@@ -46,7 +46,7 @@ class PPYOLO_2x_Config(object):
             target_size=608,
             draw_image=False,    # 是否画出验证集图片
             draw_thresh=0.15,    # 如果draw_image==True，那么只画出分数超过draw_thresh的物体的预测框。
-            eval_batch_size=1,   # 验证时的批大小。由于太麻烦，暂时只支持1。
+            eval_batch_size=2,   # 验证时的批大小。
         )
 
         # 测试。用于demo.py

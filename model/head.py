@@ -318,7 +318,6 @@ class YOLOv3Head(torch.nn.Module):
                           [30, 61], [62, 45], [59, 119],
                           [116, 90], [156, 198], [373, 326]],
                  anchor_masks=[[6, 7, 8], [3, 4, 5], [0, 1, 2]],
-                 batch_size=1,
                  norm_type="bn",
                  coord_conv=True,
                  iou_aware=True,
@@ -338,7 +337,6 @@ class YOLOv3Head(torch.nn.Module):
         super(YOLOv3Head, self).__init__()
         self.conv_block_num = conv_block_num
         self.num_classes = num_classes
-        self.batch_size = batch_size
         self.norm_type = norm_type
         self.coord_conv = coord_conv
         self.iou_aware = iou_aware
@@ -478,7 +476,7 @@ class YOLOv3Head(torch.nn.Module):
             im_size (Variable): Variable of size([h, w]) of each image
 
         Returns:
-            pred (Variable): The prediction result after non-max suppress.
+            pred (Variable): shape = [bs, keep_top_k, 6]
 
         """
         # outputs里为大中小感受野的输出
@@ -502,17 +500,31 @@ class YOLOv3Head(torch.nn.Module):
 
 
         # nms
-        pred = None
+        preds = None
         nms_type = self.nms_cfg['nms_type']
         if nms_type == 'matrix_nms':
-            pred = matrix_nms(yolo_boxes[0], yolo_scores[0],
-                              score_threshold=self.nms_cfg['score_threshold'],
-                              post_threshold=self.nms_cfg['post_threshold'],
-                              nms_top_k=self.nms_cfg['nms_top_k'],
-                              keep_top_k=self.nms_cfg['keep_top_k'],
-                              use_gaussian=self.nms_cfg['use_gaussian'],
-                              gaussian_sigma=self.nms_cfg['gaussian_sigma'])
-        return pred
+            batch_size = yolo_boxes.shape[0]
+            if batch_size == 1:
+                pred = matrix_nms(yolo_boxes[0], yolo_scores[0],
+                                  score_threshold=self.nms_cfg['score_threshold'],
+                                  post_threshold=self.nms_cfg['post_threshold'],
+                                  nms_top_k=self.nms_cfg['nms_top_k'],
+                                  keep_top_k=self.nms_cfg['keep_top_k'],
+                                  use_gaussian=self.nms_cfg['use_gaussian'],
+                                  gaussian_sigma=self.nms_cfg['gaussian_sigma'])
+                preds = pred.unsqueeze(0)
+            else:
+                preds = torch.zeros((batch_size, self.nms_cfg['keep_top_k'], 6), device=yolo_boxes.device) - 1.0
+                for i in range(batch_size):
+                    pred = matrix_nms(yolo_boxes[i], yolo_scores[i],
+                                      score_threshold=self.nms_cfg['score_threshold'],
+                                      post_threshold=self.nms_cfg['post_threshold'],
+                                      nms_top_k=self.nms_cfg['nms_top_k'],
+                                      keep_top_k=self.nms_cfg['keep_top_k'],
+                                      use_gaussian=self.nms_cfg['use_gaussian'],
+                                      gaussian_sigma=self.nms_cfg['gaussian_sigma'])
+                    preds[i, :pred.shape[0], :] = pred
+        return preds
 
 
 

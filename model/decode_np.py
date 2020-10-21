@@ -41,12 +41,20 @@ class Decode(object):
     def detect_image(self, image, draw_image, draw_thresh=0.0):
         pimage, im_size = self.process_image(np.copy(image))
 
-        boxes, scores, classes = self.predict(pimage, im_size)
+        pred = self.predict(pimage, im_size)   # [bs, M, 6]
+        if pred[0][0][0] < 0.0:
+            boxes = np.array([])
+            classes = np.array([])
+            scores = np.array([])
+        else:
+            boxes = pred[0, :, 2:]
+            scores = pred[0, :, 1]
+            classes = pred[0, :, 0].astype(np.int32)
         if len(scores) > 0 and draw_image:
             pos = np.where(scores >= draw_thresh)
             boxes2 = boxes[pos]         # [M, 4]
-            classes2 = classes[pos]     # [M, ]
             scores2 = scores[pos]       # [M, ]
+            classes2 = classes[pos]     # [M, ]
             self.draw(image, boxes2, scores2, classes2)
         return image, boxes, scores, classes
 
@@ -77,18 +85,30 @@ class Decode(object):
         batch = np.concatenate(batch, axis=0)
         batch_im_size = np.concatenate(batch_im_size, axis=0)
 
-        boxes, scores, classes = self.predict(batch, batch_im_size)
-        if len(scores) > 0 and draw_image:
-            pos = np.where(scores >= draw_thresh)
-            boxes2 = boxes[pos]         # [M, 4]
-            classes2 = classes[pos]     # [M, ]
-            scores2 = scores[pos]       # [M, ]
-            self.draw(batch_img[0], boxes2, scores2, classes2)
-
-        result_image[0] = batch_img[0]
-        result_boxes[0] = boxes
-        result_scores[0] = scores
-        result_classes[0] = classes
+        pred = self.predict(batch, batch_im_size)   # [bs, M, 6]
+        for i in range(batch_size):
+            if pred[i][0][0] < 0.0:
+                boxes = np.array([])
+                classes = np.array([])
+                scores = np.array([])
+            else:
+                boxes = pred[i, :, 2:]
+                scores = pred[i, :, 1]
+                classes = pred[i, :, 0].astype(np.int32)
+                pos = np.where(scores >= 0.0)
+                boxes = boxes[pos]      # [M, 4]
+                scores = scores[pos]    # [M, ]
+                classes = classes[pos]  # [M, ]
+            if len(scores) > 0 and draw_image:
+                pos = np.where(scores >= draw_thresh)
+                boxes2 = boxes[pos]         # [M, 4]
+                scores2 = scores[pos]       # [M, ]
+                classes2 = classes[pos]     # [M, ]
+                self.draw(batch_img[i], boxes2, scores2, classes2)
+            result_image[i] = batch_img[i]
+            result_boxes[i] = boxes
+            result_scores[i] = scores
+            result_classes[i] = classes
         return result_image, result_boxes, result_scores, result_classes
 
     def draw(self, image, boxes, scores, classes):
@@ -142,16 +162,8 @@ class Decode(object):
             image = image.cuda()
             im_size = im_size.cuda()
         pred = self._yolo(image, im_size)
-        pred = pred.cpu().detach().numpy()   # [M, 6]
-        if pred[0][0] < 0.0:
-            boxes = np.array([])
-            classes = np.array([])
-            scores = np.array([])
-        else:
-            boxes = pred[:, 2:]
-            scores = pred[:, 1]
-            classes = pred[:, 0].astype(np.int32)
-        return boxes, scores, classes
+        pred = pred.cpu().detach().numpy()   # [bs, M, 6]
+        return pred
 
 
 
