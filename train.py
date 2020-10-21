@@ -303,9 +303,11 @@ if __name__ == '__main__':
             # ==================== eval ====================
             if iter_id % cfg.train_cfg['eval_iter'] == 0:
                 ppyolo.eval()   # 切换到验证模式
+                head.set_dropblock(is_test=True)
                 box_ap = eval(_decode, val_images, cfg.val_pre_path, cfg.val_path, cfg.eval_cfg['eval_batch_size'], _clsid2catid, cfg.eval_cfg['draw_image'], cfg.eval_cfg['draw_thresh'])
                 logger.info("box ap: %.3f" % (box_ap[0], ))
                 ppyolo.train()  # 切换到训练模式
+                head.set_dropblock(is_test=False)
 
                 # 以box_ap作为标准
                 ap = box_ap

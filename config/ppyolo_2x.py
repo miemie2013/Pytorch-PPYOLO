@@ -82,6 +82,7 @@ class PPYOLO_2x_Config(object):
             scale_x_y=1.05,
             spp=True,
             drop_block=True,
+            keep_prob=0.9,
             downsample=[32, 16, 8],
             in_channels=[2048, 1024, 512],
         )

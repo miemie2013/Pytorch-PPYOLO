@@ -187,7 +187,43 @@ class DropBlock(torch.nn.Module):
     def __call__(self, input):
         if self.is_test:
             return input
-        return input
+
+        def CalculateGamma(input, block_size, keep_prob):
+            h = input.shape[2]  # int
+            h = np.array([h])
+            h = torch.tensor(h, dtype=torch.float32, device=input.device)
+            feat_shape_t = h.reshape((1, 1, 1, 1))  # shape: [1, 1, 1, 1]
+            feat_area = torch.pow(feat_shape_t, 2)  # shape: [1, 1, 1, 1]
+
+            block_shape_t = torch.zeros((1, 1, 1, 1), dtype=torch.float32, device=input.device) + block_size
+            block_area = torch.pow(block_shape_t, 2)
+
+            useful_shape_t = feat_shape_t - block_shape_t + 1
+            useful_area = torch.pow(useful_shape_t, 2)
+
+            upper_t = feat_area * (1 - keep_prob)
+            bottom_t = block_area * useful_area
+            output = upper_t / bottom_t
+            return output
+
+        gamma = CalculateGamma(input, block_size=self.block_size, keep_prob=self.keep_prob)
+        input_shape = input.shape
+        p = gamma.repeat(input_shape)
+
+        input_shape_tmp = input.shape
+        random_matrix = torch.rand(input_shape_tmp, device=input.device)
+        one_zero_m = (random_matrix < p).float()
+
+        mask_flag = torch.nn.functional.max_pool2d(one_zero_m, (self.block_size, self.block_size), stride=1, padding=1)
+        mask = 1.0 - mask_flag
+
+        elem_numel = input_shape[0] * input_shape[1] * input_shape[2] * input_shape[3]
+        elem_numel_m = float(elem_numel)
+
+        elem_sum = mask.sum()
+
+        output = input * mask * elem_numel_m / elem_sum
+        return output
 
 
 
@@ -384,6 +420,11 @@ class YOLOv3Head(torch.nn.Module):
                 self.upsample_layers.append(conv_unit)
                 self.upsample_layers.append(upsample)
 
+    def set_dropblock(self, is_test):
+        for detection_block in self.detection_blocks:
+            for l in detection_block.layers:
+                if isinstance(l, DropBlock):
+                    l.is_test = is_test
 
     def _get_outputs(self, body_feats):
         outputs = []
