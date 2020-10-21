@@ -18,6 +18,7 @@ class PPYOLO_2x_Config(object):
         # self.classes_path = 'data/voc_classes.txt'
         # self.train_pre_path = '../VOCdevkit/VOC2012/JPEGImages/'   # 训练集图片相对路径
         # self.val_pre_path = '../VOCdevkit/VOC2012/JPEGImages/'     # 验证集图片相对路径
+        # self.num_classes = 20                                      # 数据集类别数
 
         # COCO数据集
         self.train_path = '../COCO/annotations/instances_train2017.json'
@@ -25,6 +26,7 @@ class PPYOLO_2x_Config(object):
         self.classes_path = 'data/coco_classes.txt'
         self.train_pre_path = '../COCO/train2017/'  # 训练集图片相对路径
         self.val_pre_path = '../COCO/val2017/'      # 验证集图片相对路径
+        self.num_classes = 80                       # 数据集类别数
 
 
         # ========= 一些设置 =========
@@ -70,8 +72,7 @@ class PPYOLO_2x_Config(object):
         )
         self.head_type = 'YOLOv3Head'
         self.head = dict(
-            num_classes=80,
-            # num_classes=20,
+            num_classes=self.num_classes,
             norm_type='bn',
             anchor_masks=[[6, 7, 8], [3, 4, 5], [0, 1, 2]],
             anchors=[[10, 13], [16, 30], [33, 23],
@@ -174,8 +175,7 @@ class PPYOLO_2x_Config(object):
                      [30, 61], [62, 45], [59, 119],
                      [116, 90], [156, 198], [373, 326]],
             downsample_ratios=[32, 16, 8],
-            num_classes=80,
-            # num_classes=20,
+            num_classes=self.num_classes,
         )
         # ResizeImage
         self.resizeImage = dict(

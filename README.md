@@ -39,9 +39,9 @@ Pytorch版PPYOLO: https://github.com/miemie2013/Pytorch-PPYOLO (mAP 44.8%)
 
 2020/10/17:首次公开
 
-## 需要补充
+## 未实现的部分
 
-加入PPYOLO中的剩余技巧。
+EMA；多卡训练（由于咩酱只有一张6G的卡，也不是硕士生没有实验室，这部分可能不会实现）。
 
 ## 环境搭建
 
@@ -88,8 +88,7 @@ xxx.jpg 48,240,195,371,11 8,12,352,498,14
 # 图片名 物体1左上角x坐标,物体1左上角y坐标,物体1右下角x坐标,物体1右下角y坐标,物体1类别id 物体2左上角x坐标,物体2左上角y坐标,物体2右下角x坐标,物体2右下角y坐标,物体2类别id ...
 ```
 运行1_txt2json.py会在annotation_json目录下生成两个coco注解风格的json注解文件，这是train.py支持的注解文件格式。
-在config/ppyolo_2x.py里修改train_path、val_path、classes_path、train_pre_path、val_pre_path这5个变量（自带的voc2012数据集直接解除注释就ok了）,
-另外需要修改config/ppyolo_2x.py里head和gt2YoloTarget里的num_classes为新数据集的类别数，就可以开始训练自己的数据集了。
+在config/ppyolo_2x.py里修改train_path、val_path、classes_path、train_pre_path、val_pre_path、num_classes这6个变量（自带的voc2012数据集直接解除注释就ok了）,就可以开始训练自己的数据集了。
 而且，直接加载ppyolo_2x.pt的权重训练也是可以的，这时候也仅仅不加载3个输出卷积层的6个权重（因为类别数不同导致了输出通道数不同）。
 如果需要跑demo.py、eval.py，与数据集有关的变量也需要修改一下，应该很容易看懂。
 

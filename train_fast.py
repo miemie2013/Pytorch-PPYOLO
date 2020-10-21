@@ -84,7 +84,7 @@ def read_train_data(cfg,
             key_list = list(train_dic.keys())
             key_len = len(key_list)
             while key_len >= 3:
-                time.sleep(1)
+                time.sleep(0.01)
                 key_list = list(train_dic.keys())
                 key_len = len(key_list)
 
@@ -308,7 +308,7 @@ if __name__ == '__main__':
             key_list = list(train_dic.keys())
             key_len = len(key_list)
             while key_len == 0:
-                time.sleep(1)
+                time.sleep(0.01)
                 key_list = list(train_dic.keys())
                 key_len = len(key_list)
             dic = train_dic.pop('%.8d'%iter_id)
