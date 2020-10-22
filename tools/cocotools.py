@@ -209,7 +209,7 @@ def eval(_decode, images, eval_pre_path, anno_file, eval_batch_size, _clsid2cati
         num_steps += 1
 
     logger.info('Total iter: {}'.format(num_steps))
-
+    start = time.time()
 
     # 读数据的线程
     eval_dic = {}
@@ -247,6 +247,9 @@ def eval(_decode, images, eval_pre_path, anno_file, eval_batch_size, _clsid2cati
         if i % 100 == 0:
             logger.info('Test iter {}'.format(i))
     logger.info('Test Done.')
+    cost = time.time() - start
+    logger.info('total time: {0:.6f}s'.format(cost))
+    logger.info('Speed: %.6fs per image,  %.1f FPS.'%((cost / n), (n / cost)))
     # 开始评测
     box_ap_stats = bbox_eval(anno_file)
     return box_ap_stats
