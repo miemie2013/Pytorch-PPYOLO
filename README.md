@@ -39,9 +39,30 @@ Pytorch版PPYOLO: https://github.com/miemie2013/Pytorch-PPYOLO (mAP 44.8%)
 
 2020/10/17:首次公开
 
+2020/10/22:实现EMA
+
+## 已实现的部分
+
+EMA(指数滑动平均)：修改config/ppyolo_2x.py中self.use_ema = True打开。训练速度会变慢，需要的显存和内存增大。如果在训练过程的eval阶段报显存不够用，请把self.train_cfg.eval_iter调为无限大（如99999999），使得训练时不eval。训练结束后再用eval.py对感兴趣的模型进行eval。
+
+DropBlock：随机丢弃特征图上的像素。
+
+IoU Loss：iou损失。
+
+IoU Aware：预测预测框和gt的iou。并作用在objness上。
+
+Grid Sensitive：预测框中心点的xy可以出到网格之外，应付gt中心点在网格线上这种情况。
+
+Matrix NMS：SOLOv2中提出的算法，在soft-nms等基础上进行并行化加速，若预测框与同类高分框有iou，减小预测框的分数而不是直接丢弃。这里用box iou代替mask iou。
+
+CoordConv：特征图带上像素的坐标信息（通道数+2）。
+
+SPP：3个池化层的输出和原图拼接。
+
+
 ## 未实现的部分
 
-EMA；多卡训练（由于咩酱只有一张6G的卡，也不是硕士生没有实验室，这部分可能不会实现）。
+多卡训练（由于咩酱只有一张6G的卡，也不是硕士生没有实验室，这部分可能不会实现）。
 
 ## 环境搭建
 

@@ -63,6 +63,8 @@ class PPYOLO_2x_Config(object):
 
 
         # ============= 模型相关 =============
+        self.use_ema = False
+        self.ema_decay = 0.9998
         self.backbone_type = 'Resnet50Vd'
         self.backbone = dict(
             norm_type='bn',
