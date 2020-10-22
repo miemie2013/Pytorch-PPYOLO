@@ -57,56 +57,46 @@ class Decode(object):
         return image, boxes, scores, classes
 
     # 多线程后处理
-    def multi_thread_post(self, batch_img, outs, i, draw_image, result_image, result_boxes, result_scores, result_classes):
-        a1 = np.reshape(outs[0][i], (1, self.input_shape[0] // 32, self.input_shape[1] // 32, 3, 5 + self.num_classes))
-        a2 = np.reshape(outs[1][i], (1, self.input_shape[0] // 16, self.input_shape[1] // 16, 3, 5 + self.num_classes))
-        a3 = np.reshape(outs[2][i], (1, self.input_shape[0] // 8, self.input_shape[1] // 8, 3, 5 + self.num_classes))
-        boxes, scores, classes = self._yolo_out([a1, a2, a3], batch_img[i].shape)
-        if boxes is not None and draw_image:
-            self.draw(batch_img[i], boxes, scores, classes)
+    def multi_thread_post(self, i, pred, result_image, result_boxes, result_scores, result_classes, batch_img, draw_image, draw_thresh):
+        if pred[i][0][0] < 0.0:
+            boxes = np.array([])
+            classes = np.array([])
+            scores = np.array([])
+        else:
+            boxes = pred[i, :, 2:]
+            scores = pred[i, :, 1]
+            classes = pred[i, :, 0].astype(np.int32)
+            pos = np.where(scores >= 0.0)
+            boxes = boxes[pos]  # [M, 4]
+            scores = scores[pos]  # [M, ]
+            classes = classes[pos]  # [M, ]
+        if len(scores) > 0 and draw_image:
+            pos = np.where(scores >= draw_thresh)
+            boxes2 = boxes[pos]  # [M, 4]
+            scores2 = scores[pos]  # [M, ]
+            classes2 = classes[pos]  # [M, ]
+            self.draw(batch_img[i], boxes2, scores2, classes2)
         result_image[i] = batch_img[i]
         result_boxes[i] = boxes
         result_scores[i] = scores
         result_classes[i] = classes
 
     # 处理一批图片
-    def detect_batch(self, batch_img, draw_image, draw_thresh=0.0):
+    def detect_batch(self, batch_img, batch_pimage, batch_im_size, draw_image, draw_thresh=0.0):
         batch_size = len(batch_img)
         result_image, result_boxes, result_scores, result_classes = [None] * batch_size, [None] * batch_size, [None] * batch_size, [None] * batch_size
-        batch = []
-        batch_im_size = []
 
-        for image in batch_img:
-            pimage, im_size = self.process_image(np.copy(image))
-            batch.append(pimage)
-            batch_im_size.append(im_size)
-        batch = np.concatenate(batch, axis=0)
-        batch_im_size = np.concatenate(batch_im_size, axis=0)
+        pred = self.predict(batch_pimage, batch_im_size)   # [bs, M, 6]
 
-        pred = self.predict(batch, batch_im_size)   # [bs, M, 6]
+        threads = []
         for i in range(batch_size):
-            if pred[i][0][0] < 0.0:
-                boxes = np.array([])
-                classes = np.array([])
-                scores = np.array([])
-            else:
-                boxes = pred[i, :, 2:]
-                scores = pred[i, :, 1]
-                classes = pred[i, :, 0].astype(np.int32)
-                pos = np.where(scores >= 0.0)
-                boxes = boxes[pos]      # [M, 4]
-                scores = scores[pos]    # [M, ]
-                classes = classes[pos]  # [M, ]
-            if len(scores) > 0 and draw_image:
-                pos = np.where(scores >= draw_thresh)
-                boxes2 = boxes[pos]         # [M, 4]
-                scores2 = scores[pos]       # [M, ]
-                classes2 = classes[pos]     # [M, ]
-                self.draw(batch_img[i], boxes2, scores2, classes2)
-            result_image[i] = batch_img[i]
-            result_boxes[i] = boxes
-            result_scores[i] = scores
-            result_classes[i] = classes
+            t = threading.Thread(target=self.multi_thread_post,
+                                 args=(i, pred, result_image, result_boxes, result_scores, result_classes, batch_img, draw_image, draw_thresh))
+            threads.append(t)
+            t.start()
+        # 等待所有线程任务结束。
+        for t in threads:
+            t.join()
         return result_image, result_boxes, result_scores, result_classes
 
     def draw(self, image, boxes, scores, classes):
