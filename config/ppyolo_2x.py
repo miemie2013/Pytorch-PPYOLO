@@ -114,7 +114,7 @@ class PPYOLO_2x_Config(object):
             nms_type='matrix_nms',
             score_threshold=0.01,
             post_threshold=0.01,
-            nms_top_k=-1,
+            nms_top_k=500,
             keep_top_k=100,
             use_gaussian=False,
             gaussian_sigma=2.,
