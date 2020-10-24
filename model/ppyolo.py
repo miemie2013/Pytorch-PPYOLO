@@ -37,12 +37,12 @@ class PPYOLO(torch.nn.Module):
             self.ema_state_dict[k] = v2
 
     def update_ema_state_dict(self, thres_steps):
+        decay2 = (1.0 + thres_steps) / (10.0 + thres_steps)
+        ema_decay = min(self.ema_decay, decay2)  # 真实的衰减率
         temp_dict = copy.deepcopy(self.state_dict())
         for k, v in temp_dict.items():    # bn层的均值、方差也受该全局ema管理（尽管它们有自己的滑动平均）
             v = v.cpu()   # 放进cpu内存
             v2 = self.ema_state_dict[k]   # ema中旧的值
-            decay2 = (1.0 + thres_steps) / (10.0 + thres_steps)
-            ema_decay = min(self.ema_decay, decay2)   # 真实的衰减率
             v2 = ema_decay * v2 + (1.0 - ema_decay) * v   # ema中新的值
             v2 = v2 / (1.0 - ema_decay ** (thres_steps + 1))   # 偏置校正
             self.ema_state_dict[k] = v2   # ema写入新的值
