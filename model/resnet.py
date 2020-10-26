@@ -76,10 +76,12 @@ class IdentityBlock(torch.nn.Module):
         return x
 
 class Resnet50Vd(torch.nn.Module):
-    def __init__(self, norm_type='bn', feature_maps=[3, 4, 5], dcn_v2_stages=[5], downsample_in3x3=True):
+    def __init__(self, norm_type='bn', feature_maps=[3, 4, 5], dcn_v2_stages=[5], downsample_in3x3=True, freeze_at=0):
         super(Resnet50Vd, self).__init__()
         self.norm_type = norm_type
         self.feature_maps = feature_maps
+        assert freeze_at in [0, 1, 2, 3, 4, 5]
+        self.freeze_at = freeze_at
         bn = 0
         gn = 0
         af = 0
@@ -163,8 +165,8 @@ class Resnet50Vd(torch.nn.Module):
         layer = getattr(self, name)
         return layer
 
-    def freeze(self, freeze_at=2):
-        assert freeze_at in [1, 2, 3, 4, 5]
+    def freeze(self):
+        freeze_at = self.freeze_at
         if freeze_at >= 1:
             self.stage1_conv1_1.freeze()
             self.stage1_conv1_2.freeze()

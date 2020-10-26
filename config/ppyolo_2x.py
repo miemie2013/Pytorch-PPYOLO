@@ -13,26 +13,28 @@
 class PPYOLO_2x_Config(object):
     def __init__(self):
         # 自定义数据集
-        # self.train_path = 'annotation_json/voc2012_train.json'
-        # self.val_path = 'annotation_json/voc2012_val.json'
-        # self.classes_path = 'data/voc_classes.txt'
-        # self.train_pre_path = '../VOCdevkit/VOC2012/JPEGImages/'   # 训练集图片相对路径
-        # self.val_pre_path = '../VOCdevkit/VOC2012/JPEGImages/'     # 验证集图片相对路径
-        # self.num_classes = 20                                      # 数据集类别数
+        self.train_path = 'annotation_json/voc2012_train.json'
+        self.val_path = 'annotation_json/voc2012_val.json'
+        self.classes_path = 'data/voc_classes.txt'
+        self.train_pre_path = '../VOCdevkit/VOC2012/JPEGImages/'   # 训练集图片相对路径
+        self.val_pre_path = '../VOCdevkit/VOC2012/JPEGImages/'     # 验证集图片相对路径
+        self.num_classes = 20                                      # 数据集类别数
 
         # COCO数据集
-        self.train_path = '../COCO/annotations/instances_train2017.json'
-        self.val_path = '../COCO/annotations/instances_val2017.json'
-        self.classes_path = 'data/coco_classes.txt'
-        self.train_pre_path = '../COCO/train2017/'  # 训练集图片相对路径
-        self.val_pre_path = '../COCO/val2017/'      # 验证集图片相对路径
-        self.num_classes = 80                       # 数据集类别数
+        # self.train_path = '../COCO/annotations/instances_train2017.json'
+        # self.val_path = '../COCO/annotations/instances_val2017.json'
+        # self.classes_path = 'data/coco_classes.txt'
+        # self.train_pre_path = '../COCO/train2017/'  # 训练集图片相对路径
+        # self.val_pre_path = '../COCO/val2017/'      # 验证集图片相对路径
+        # self.num_classes = 80                       # 数据集类别数
 
 
         # ========= 一些设置 =========
         self.train_cfg = dict(
             lr=0.0001,
             batch_size=8,
+            num_threads=5,   # 读数据的线程数
+            max_batch=3,     # 最大读多少个批
             model_path='ppyolo_2x.pt',
             # model_path='./weights/step00005000.pt',
             save_iter=1000,   # 每隔几步保存一次模型
@@ -72,6 +74,7 @@ class PPYOLO_2x_Config(object):
             feature_maps=[3, 4, 5],
             dcn_v2_stages=[5],
             downsample_in3x3=True,   # 注意这个细节，是在3x3卷积层下采样的。
+            freeze_at=5,
         )
         self.head_type = 'YOLOv3Head'
         self.head = dict(
