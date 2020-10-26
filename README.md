@@ -5,7 +5,7 @@ Pytorch实现PPYOLO。
 
 参考自https://github.com/PaddlePaddle/PaddleDetection
 
-读数据是训练速度的瓶颈，请支持正版，嘤嘤嘤~
+请支持正版，嘤嘤嘤~
 
 ## 咩酱刷屏时刻
 
