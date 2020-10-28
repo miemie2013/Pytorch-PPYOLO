@@ -8,6 +8,7 @@
 #
 # ================================================================
 from config import *
+from model.custom_layers import DCNv2
 from model.ppyolo import PPYOLO
 import paddle.fluid as fluid
 
@@ -106,16 +107,36 @@ for nid, num in enumerate(nums):
         copy_conv_bn(backbone.get_block('stage%d_%d' % (2+nid, kk)).conv1, w, scale, offset, m, v)
 
         if nid == 3:   # DCNv2
+            conv_unit = backbone.get_block('stage%d_%d' % (2+nid, kk)).conv2
+
             offset_w = state_dict[conv_name2 + '_conv_offset.w_0']
             offset_b = state_dict[conv_name2 + '_conv_offset.b_0']
-            copy_conv(backbone.get_block('stage%d_%d' % (2 + nid, kk)).conv2.conv.conv_offset_mask, offset_w, offset_b)
+            if isinstance(conv_unit.conv, DCNv2):   # 如果是自实现的DCNv2
+                copy_conv(conv_unit.conv.conv_offset, offset_w, offset_b)
+            else:
+                copy_conv(conv_unit.conv.conv_offset_mask, offset_w, offset_b)
 
-        w = state_dict[conv_name2 + '_weights']
-        scale = state_dict[bn_name2 + '_scale']
-        offset = state_dict[bn_name2 + '_offset']
-        m = state_dict[bn_name2 + '_mean']
-        v = state_dict[bn_name2 + '_variance']
-        copy_conv_bn(backbone.get_block('stage%d_%d' % (2+nid, kk)).conv2, w, scale, offset, m, v)
+            w = state_dict[conv_name2 + '_weights']
+            scale = state_dict[bn_name2 + '_scale']
+            offset = state_dict[bn_name2 + '_offset']
+            m = state_dict[bn_name2 + '_mean']
+            v = state_dict[bn_name2 + '_variance']
+
+            if isinstance(conv_unit.conv, DCNv2):   # 如果是自实现的DCNv2
+                conv_unit.conv.dcn_weight.data = torch.Tensor(w).cuda()
+                conv_unit.bn.weight.data = torch.Tensor(scale).cuda()
+                conv_unit.bn.bias.data = torch.Tensor(offset).cuda()
+                conv_unit.bn.running_mean.data = torch.Tensor(m).cuda()
+                conv_unit.bn.running_var.data = torch.Tensor(v).cuda()
+            else:
+                copy_conv_bn(conv_unit, w, scale, offset, m, v)
+        else:
+            w = state_dict[conv_name2 + '_weights']
+            scale = state_dict[bn_name2 + '_scale']
+            offset = state_dict[bn_name2 + '_offset']
+            m = state_dict[bn_name2 + '_mean']
+            v = state_dict[bn_name2 + '_variance']
+            copy_conv_bn(backbone.get_block('stage%d_%d' % (2+nid, kk)).conv2, w, scale, offset, m, v)
 
         w = state_dict[conv_name3 + '_weights']
         scale = state_dict[bn_name3 + '_scale']

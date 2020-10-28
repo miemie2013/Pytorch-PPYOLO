@@ -75,6 +75,9 @@ class Conv2dUnit(torch.nn.Module):
             self.conv.bias.data.zero_()
             self.conv.conv_offset_mask.weight.data.zero_()
             self.conv.conv_offset_mask.bias.data.zero_()
+
+            # 自实现的DCNv2，非常慢=_=!
+            # self.conv = DCNv2(input_dim, filters, filter_size=filter_size, stride=stride, padding=(filter_size - 1) // 2, bias_attr=False)
         else:
             self.conv = torch.nn.Conv2d(input_dim, filters, kernel_size=filter_size, stride=stride, padding=(filter_size - 1) // 2, bias=bias_attr)
 
@@ -128,6 +131,9 @@ class Conv2dUnit(torch.nn.Module):
 
 
 class DCNv2(torch.nn.Module):
+    '''
+    自实现的DCNv2，非常慢=_=!
+    '''
     def __init__(self,
                  input_dim,
                  filters,
