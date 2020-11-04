@@ -273,7 +273,7 @@ class DCNv2_Slow(torch.nn.Module):
 
 class DCNv2(torch.nn.Module):
     '''
-    咩酱自实现的DCNv2，咩酱的得意之作，Pytorch的纯python接口实现，效率慢一点。
+    咩酱自实现的DCNv2，咩酱的得意之作，Pytorch的纯python接口实现，效率xxx。
     '''
     def __init__(self,
                  input_dim,
@@ -397,16 +397,6 @@ class DCNv2(torch.nn.Module):
         pos_x = start_pos_x + filter_inner_offset_x + offset_x  # [N, out_H, out_W, kH*kW, 1]
         pos_y = torch.clamp(pos_y, 0.0, H + padding * 2 - 1.0)
         pos_x = torch.clamp(pos_x, 0.0, W + padding * 2 - 1.0)
-
-        y1 = torch.floor(pos_y)
-        x1 = torch.floor(pos_x)
-        y2 = y1 + 1.0
-        x2 = x1 + 1.0
-
-        y1x1 = torch.cat([y1, x1], -1)  # [N, out_H, out_W, kH*kW, 2]
-        y1x2 = torch.cat([y1, x2], -1)  # [N, out_H, out_W, kH*kW, 2]
-        y2x1 = torch.cat([y2, x1], -1)  # [N, out_H, out_W, kH*kW, 2]
-        y2x2 = torch.cat([y2, x2], -1)  # [N, out_H, out_W, kH*kW, 2]
         ytxt = torch.cat([pos_y, pos_x], -1)  # [N, out_H, out_W, kH*kW, 2]
 
         pad_x = pad_x.permute(0, 2, 3, 1)  # [N, pad_x_H, pad_x_W, C]
@@ -418,32 +408,31 @@ class DCNv2(torch.nn.Module):
         for bid in range(N):
             pad_x2 = pad_x[bid]  # [pad_x_H, pad_x_W, in_C]
             mask2 = mask[bid]  # [out_H, out_W, kH, kW]
-
-            _y1x1 = y1x1[bid]  # [out_H, out_W, kH*kW, 2]
-            _y1x2 = y1x2[bid]  # [out_H, out_W, kH*kW, 2]
-            _y2x1 = y2x1[bid]  # [out_H, out_W, kH*kW, 2]
-            _y2x2 = y2x2[bid]  # [out_H, out_W, kH*kW, 2]
             _ytxt = ytxt[bid]  # [out_H, out_W, kH*kW, 2]
 
-            _y1x1 = torch.reshape(_y1x1, (out_H * out_W * kH * kW, 2)).long()  # [out_H*out_W*kH*kW, 2]
-            v1 = self.gather_nd(pad_x2, _y1x1)  # [out_H*out_W*kH*kW, in_C]
-            _y1x2 = torch.reshape(_y1x2, (out_H * out_W * kH * kW, 2)).long()  # [out_H*out_W*kH*kW, 2]
-            v2 = self.gather_nd(pad_x2, _y1x2)  # [out_H*out_W*kH*kW, in_C]
-            _y2x1 = torch.reshape(_y2x1, (out_H * out_W * kH * kW, 2)).long()  # [out_H*out_W*kH*kW, 2]
-            v3 = self.gather_nd(pad_x2, _y2x1)  # [out_H*out_W*kH*kW, in_C]
-            _y2x2 = torch.reshape(_y2x2, (out_H * out_W * kH * kW, 2)).long()  # [out_H*out_W*kH*kW, 2]
-            v4 = self.gather_nd(pad_x2, _y2x2)  # [out_H*out_W*kH*kW, in_C]
-
             _ytxt = torch.reshape(_ytxt, (out_H * out_W * kH * kW, 2))  # [out_H*out_W*kH*kW, 2]
+            _yt = _ytxt[:, :1]
+            _xt = _ytxt[:, 1:]
+            _y1 = torch.floor(_yt)
+            _x1 = torch.floor(_xt)
+            _y2 = _y1 + 1.0
+            _x2 = _x1 + 1.0
+            _y1x1 = torch.cat([_y1, _x1], -1)
+            _y1x2 = torch.cat([_y1, _x2], -1)
+            _y2x1 = torch.cat([_y2, _x1], -1)
+            _y2x2 = torch.cat([_y2, _x2], -1)
 
-            # 必须类型转换，不然。。。出现数值不正确的问题。
-            _y1x1 = _y1x1.float()
-            _y1x2 = _y1x2.float()
-            _y2x1 = _y2x1.float()
-            _y2x2 = _y2x2.float()
+            _y1x1_int = _y1x1.long()  # [out_H*out_W*kH*kW, 2]
+            v1 = self.gather_nd(pad_x2, _y1x1_int)  # [out_H*out_W*kH*kW, in_C]
+            _y1x2_int = _y1x2.long()  # [out_H*out_W*kH*kW, 2]
+            v2 = self.gather_nd(pad_x2, _y1x2_int)  # [out_H*out_W*kH*kW, in_C]
+            _y2x1_int = _y2x1.long()  # [out_H*out_W*kH*kW, 2]
+            v3 = self.gather_nd(pad_x2, _y2x1_int)  # [out_H*out_W*kH*kW, in_C]
+            _y2x2_int = _y2x2.long()  # [out_H*out_W*kH*kW, 2]
+            v4 = self.gather_nd(pad_x2, _y2x2_int)  # [out_H*out_W*kH*kW, in_C]
 
-            lh = _ytxt[:, :1] - _y1x1[:, :1]  # [out_H*out_W*kH*kW, 1]
-            lw = _ytxt[:, 1:] - _y1x1[:, 1:]
+            lh = _yt - _y1  # [out_H*out_W*kH*kW, 1]
+            lw = _xt - _x1
             hh = 1 - lh
             hw = 1 - lw
             w1 = hh * hw
@@ -457,15 +446,20 @@ class DCNv2(torch.nn.Module):
             value = value.permute(0, 1, 4, 2, 3)
             new_x[bid, :, :, :, :, :] = value
 
-        new_x = torch.reshape(new_x, (N, out_H, out_W, in_C * kH * kW))
 
+        # 旧的方案，使用逐元素相乘，慢！
+        # new_x = torch.reshape(new_x, (N, out_H, out_W, in_C * kH * kW))  # [N, out_H, out_W, in_C * kH * kW]
+        # new_x = new_x.permute(0, 3, 1, 2)  # [N, in_C*kH*kW, out_H, out_W]
+        # exp_new_x = new_x.unsqueeze(1)  # 增加1维，[N,      1, in_C*kH*kW, out_H, out_W]
+        # reshape_w = torch.reshape(dcn_weight, (1, out_C, in_C * kH * kW, 1, 1))  # [1, out_C,  in_C*kH*kW,     1,     1]
+        # out = exp_new_x * reshape_w  # 逐元素相乘，[N, out_C,  in_C*kH*kW, out_H, out_W]
+        # out = out.sum((2,))  # 第2维求和，[N, out_C, out_H, out_W]
+
+        # 新的方案，用等价的1x1卷积代替逐元素相乘，快！
+        new_x = torch.reshape(new_x, (N, out_H, out_W, in_C * kH * kW))  # [N, out_H, out_W, in_C * kH * kW]
         new_x = new_x.permute(0, 3, 1, 2)  # [N, in_C*kH*kW, out_H, out_W]
-
-        exp_new_x = new_x.unsqueeze(1)  # 增加1维，[N,      1, in_C*kH*kW, out_H, out_W]
-        reshape_w = torch.reshape(dcn_weight, (1, out_C, in_C * kH * kW, 1, 1))  # [1, out_C,  in_C*kH*kW,     1,     1]
-        out = exp_new_x * reshape_w  # 逐元素相乘，[N, out_C,  in_C*kH*kW, out_H, out_W]
-        out = out.sum((2,))  # 第2维求和，[N, out_C, out_H, out_W]
-
+        rw = torch.reshape(dcn_weight, (out_C, in_C*kH*kW, 1, 1))  # [out_C, in_C, kH, kW] -> [out_C, in_C*kH*kW, 1, 1]  变成1x1卷积核
+        out = F.conv2d(new_x, rw, stride=1)  # [N, out_C, out_H, out_W]
         return out
 
 
