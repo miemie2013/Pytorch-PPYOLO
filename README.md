@@ -83,30 +83,43 @@ cd external/DCNv2
 python setup.py build develop
 ```
 
+
+## 快速开始
+
+(1)环境搭建
+
+需要安装cuda10，Pytorch1.x。
+
+(2)下载预训练模型
+
+下载PaddleDetection的ppyolo.pdparams。如果你使用Linux，请使用以下命令：
+```
+wget https://paddlemodels.bj.bcebos.com/object_detection/ppyolo.pdparams
+```
+
+如果你使用Windows，请复制以下网址到浏览器或迅雷下载：
+```
+https://paddlemodels.bj.bcebos.com/object_detection/ppyolo.pdparams
+```
+下载好后将它放在项目根目录下。然后运行1_ppyolo_2x_2pytorch.py得到一个ppyolo_2x.pt，它也位于根目录下。
+
+(3)预测图片、获取FPS（预测images/test/里的图片，结果保存在images/res/）
+
+(如果使用ppyolo_2x.py配置文件)
+```
+python demo.py --config=0
+```
+
+
+
+
 ## 训练
-下载我从PaddleDetection的仓库保存下来的pytorch模型ppyolo_2x.pt
-链接：https://pan.baidu.com/s/18ZUQMWF7qPJ7K7xqx1VnpQ 
-提取码：6hph 
-
-该模型在COCO2017 val集的mAP如下
+(如果使用ppyolo_2x.py配置文件)
 ```
-Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.448
-Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.649
-Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.492
-Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.265
-Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.483
-Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.593
-Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.337
-Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.571
-Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.624
-Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.420
-Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.665
-Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.773
+python train.py --config=0
 ```
 
-
-将它放在项目根目录下。
-运行train.py进行训练。通过修改config/ppyolo_2x.py代码来进行更换数据集、更改超参数以及训练参数。
+通过修改config/xxxxxxx.py的代码来进行更换数据集、更改超参数以及训练参数。
 
 训练时如果发现mAP很稳定了，就停掉，修改学习率为原来的十分之一，接着继续训练，mAP还会再上升。暂时是这样手动操作。
 
@@ -125,10 +138,30 @@ xxx.jpg 48,240,195,371,11 8,12,352,498,14
 如果需要跑demo.py、eval.py，与数据集有关的变量也需要修改一下，应该很容易看懂。
 
 ## 评估
-训练时默认每5000步计算一次验证集的mAP。或者运行eval.py评估指定模型的mAP。该mAP是val集的结果。
+(如果使用ppyolo_2x.py配置文件)
+```
+python eval.py --config=0
+```
+
+
+## test-dev
+(如果使用ppyolo_2x.py配置文件)
+```
+python test_dev.py --config=0
+```
+
+
+运行完之后，进入results目录，把bbox_detections.json压缩成bbox_detections.zip，提交到
+https://competitions.codalab.org/competitions/20794#participate
+获得bbox mAP。该mAP是test集的结果，也就是大部分检测算法论文的标准指标。
+
 
 ## 预测
-运行demo.py。
+(如果使用ppyolo_2x.py配置文件)
+```
+python demo.py --config=0
+```
+
 
 ## 传送门
 cv算法交流q群：645796480
