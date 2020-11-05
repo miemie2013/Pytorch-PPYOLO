@@ -1,11 +1,21 @@
 # Pytorch-PPYOLO
 
 ## 概述
-Pytorch实现PPYOLO。
+PP-YOLO是[PaddleDetection](https://github.com/PaddlePaddle/PaddleDetection)优化和改进的YOLOv3的模型，其精度(COCO数据集mAP)和推理速度均优于YOLOv4模型。
 
-参考自https://github.com/PaddlePaddle/PaddleDetection
 
-请支持正版，嘤嘤嘤~
+| 算法 | 骨干网络 | 图片输入大小 | mAP(COCO val2017) | mAP(COCO test2017) | FPS  |
+|:------------:|:--------:|:----:|:-------:|:-------:|:---------:|
+| PPYOLO    | ResNet50-vd | (608,608)  | 0.448  | 0.451  | 16.6 |
+| PPYOLO    | ResNet50-vd | (320,320)  | -  | -  | 34.1 |
+
+
+**注意:**
+
+- 测速环境为：  ubuntu18.04, i5-9400F, 8GB RAM, GTX1660Ti(6GB), cuda10.0。使用了自实现的DCNv2。windows上可能没linux上FPS高。
+- FPS由demo.py测得。预测50张图片，预测之前会有一个热身(warm up)阶段使速度稳定。
+- 320x320输入的PPYOLO模型没测mAP，感兴趣的读者可以自测，使用eval.py和test_dev.py。
+
 
 ## 咩酱刷屏时刻
 
@@ -39,11 +49,9 @@ Pytorch版PPYOLO: https://github.com/miemie2013/Pytorch-PPYOLO (mAP 44.8%)
 
 2020/10/17:首次公开
 
-2020/10/22:实现EMA
+2020/11/05:咩酱成功实现DCNv2，不用编译c、c++、cuda、自定义op这些玩意了！
 
 ## 已实现的部分
-
-EMA(指数滑动平均)：修改config/ppyolo_2x.py中self.use_ema = True打开。修改config/ppyolo_2x.py中self.use_ema = False关闭。
 
 DropBlock：随机丢弃特征图上的像素。
 
@@ -62,11 +70,14 @@ SPP：3个池化层的输出和原图拼接。
 
 ## 未实现的部分
 
+EMA(指数滑动平均)：修改config/ppyolo_2x.py中self.use_ema = True打开。修改config/ppyolo_2x.py中self.use_ema = False关闭。但是咩酱并没有成功实现，所以默认是False，请等待。
+
 多卡训练（由于咩酱只有一张6G的卡，也不是硕士生没有实验室，这部分可能不会实现）。
 
 ## 环境搭建
 
-安装DCNv2
+因为咩酱用Pytorch的纯python接口实现了DCNv2，效率极高，custom_layers.py里默认使用的也是咩酱自己实现的DCNv2，所以不用编译官方的DCNv2。但是如果读者想试试官方的DCNv2，与咩酱实现的DCNv2对比速度，输入以下命令编译和安装：
+
 ```
 cd external/DCNv2
 python setup.py build develop

@@ -72,13 +72,13 @@ class Conv2dUnit(torch.nn.Module):
 
         # conv
         if use_dcn:
-            self.conv = DCN(input_dim, filters, kernel_size=3, stride=stride, padding=1, dilation=1, deformable_groups=1)
-            self.conv.bias.data.zero_()
-            self.conv.conv_offset_mask.weight.data.zero_()
-            self.conv.conv_offset_mask.bias.data.zero_()
+            # self.conv = DCN(input_dim, filters, kernel_size=3, stride=stride, padding=1, dilation=1, deformable_groups=1)
+            # self.conv.bias.data.zero_()
+            # self.conv.conv_offset_mask.weight.data.zero_()
+            # self.conv.conv_offset_mask.bias.data.zero_()
 
-            # 自实现的DCNv2，效果慢一些!
-            # self.conv = DCNv2(input_dim, filters, filter_size=filter_size, stride=stride, padding=(filter_size - 1) // 2, bias_attr=False)
+            # 咩酱自实现的DCNv2，咩酱的得意之作，Pytorch的纯python接口实现，效率极高。
+            self.conv = DCNv2(input_dim, filters, filter_size=filter_size, stride=stride, padding=(filter_size - 1) // 2, bias_attr=False)
         else:
             self.conv = torch.nn.Conv2d(input_dim, filters, kernel_size=filter_size, stride=stride, padding=(filter_size - 1) // 2, bias=bias_attr)
 
@@ -273,7 +273,7 @@ class DCNv2_Slow(torch.nn.Module):
 
 class DCNv2(torch.nn.Module):
     '''
-    咩酱自实现的DCNv2，咩酱的得意之作，Pytorch的纯python接口实现，效率xxx。
+    咩酱自实现的DCNv2，咩酱的得意之作，Pytorch的纯python接口实现，效率极高。
     '''
     def __init__(self,
                  input_dim,
