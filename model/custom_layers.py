@@ -104,9 +104,20 @@ class Conv2dUnit(torch.nn.Module):
 
 
     def freeze(self):
-        self.conv.weight.requires_grad = False
-        if self.conv.bias is not None:
-            self.conv.bias.requires_grad = False
+        if isinstance(self.conv, torch.nn.Conv2d):
+            self.conv.weight.requires_grad = False
+            if self.conv.bias is not None:
+                self.conv.bias.requires_grad = False
+        elif isinstance(self.conv, DCNv2):   # 自实现的DCNv2
+            self.conv.conv_offset.weight.requires_grad = False
+            self.conv.conv_offset.bias.requires_grad = False
+            self.conv.dcn_weight.requires_grad = False
+            if self.conv.dcn_bias is not None:
+                self.conv.dcn_bias.requires_grad = False
+        else:   # 官方DCNv2
+            self.conv.weight.requires_grad = False
+            if self.conv.bias is not None:
+                self.conv.bias.requires_grad = False
         if self.bn is not None:
             self.bn.weight.requires_grad = False
             self.bn.bias.requires_grad = False

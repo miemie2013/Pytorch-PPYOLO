@@ -16,6 +16,7 @@ import os
 import argparse
 
 from config import *
+from model.EMA import ExponentialMovingAverage
 
 from model.ppyolo import PPYOLO
 from tools.cocotools import get_classes, catid2clsid, clsid2catid
@@ -203,7 +204,7 @@ if __name__ == '__main__':
     yolo_loss = Loss(iou_loss=iou_loss, iou_aware_loss=iou_aware_loss, **cfg.yolo_loss)
     Head = select_head(cfg.head_type)
     head = Head(yolo_loss=yolo_loss, is_train=True, nms_cfg=cfg.nms_cfg, **cfg.head)
-    ppyolo = PPYOLO(backbone, head, cfg.ema_decay)
+    ppyolo = PPYOLO(backbone, head)
     _decode = Decode(ppyolo, class_names, use_gpu, cfg, for_test=False)
 
     # 加载权重
@@ -218,11 +219,13 @@ if __name__ == '__main__':
         # 冻结，使得需要的显存减少。低显存的卡建议这样配置。
         backbone.freeze()
 
-    if cfg.use_ema:
-        ppyolo.init_ema_state_dict()   # ema_state_dict使用cpu内存，不占用显存
-
     if use_gpu:   # 如果有gpu可用，模型（包括了权重weight）存放在gpu显存里
         ppyolo = ppyolo.cuda()
+
+    ema = None
+    if cfg.use_ema:
+        ema = ExponentialMovingAverage(ppyolo, cfg.ema_decay)
+        ema.register()
 
     # 种类id
     _catid2clsid = copy.deepcopy(catid2clsid)
@@ -368,7 +371,7 @@ if __name__ == '__main__':
             all_loss.backward()  # 误差反向传播, 计算参数更新值
             optimizer.step()  # 将参数更新值施加到 net 的 parameters 上
             if cfg.use_ema:
-                ppyolo.update_ema_state_dict(iter_id - 1)   # 更新ema_state_dict
+                ema.update()   # 更新ema字典
 
             # ==================== log ====================
             if iter_id % 20 == 0:
@@ -379,11 +382,11 @@ if __name__ == '__main__':
             # ==================== save ====================
             if iter_id % cfg.train_cfg['save_iter'] == 0:
                 if cfg.use_ema:
-                    ppyolo.apply_ema_state_dict()
+                    ema.apply()
                 save_path = './weights/step%.8d.pt' % iter_id
                 torch.save(ppyolo.state_dict(), save_path)
                 if cfg.use_ema:
-                    ppyolo.restore_current_state_dict()
+                    ema.restore()
                 path_dir = os.listdir('./weights')
                 steps = []
                 names = []
@@ -400,7 +403,7 @@ if __name__ == '__main__':
             # ==================== eval ====================
             if iter_id % cfg.train_cfg['eval_iter'] == 0:
                 if cfg.use_ema:
-                    ppyolo.apply_ema_state_dict()
+                    ema.apply()
                 ppyolo.eval()   # 切换到验证模式
                 head.set_dropblock(is_test=True)
                 box_ap = eval(_decode, val_images, cfg.val_pre_path, cfg.val_path, cfg.eval_cfg['eval_batch_size'], _clsid2catid, cfg.eval_cfg['draw_image'], cfg.eval_cfg['draw_thresh'])
@@ -415,7 +418,7 @@ if __name__ == '__main__':
                     best_ap_list[1] = iter_id
                     torch.save(ppyolo.state_dict(), './weights/best_model.pt')
                 if cfg.use_ema:
-                    ppyolo.restore_current_state_dict()
+                    ema.restore()
                 logger.info("Best test ap: {}, in iter: {}".format(best_ap_list[0], best_ap_list[1]))
 
             # ==================== exit ====================

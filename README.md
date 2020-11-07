@@ -7,14 +7,13 @@ PP-YOLO是[PaddleDetection](https://github.com/PaddlePaddle/PaddleDetection)优�
 | 算法 | 骨干网络 | 图片输入大小 | mAP(COCO val2017) | mAP(COCO test2017) | FPS  |
 |:------------:|:--------:|:----:|:-------:|:-------:|:---------:|
 | PPYOLO    | ResNet50-vd | (608,608)  | 0.448  | 0.451  | 16.6 |
-| PPYOLO    | ResNet50-vd | (320,320)  | -  | -  | 34.1 |
+| PPYOLO    | ResNet50-vd | (320,320)  | 0.389  | -  | 34.1 |
 
 
 **注意:**
 
 - 测速环境为：  ubuntu18.04, i5-9400F, 8GB RAM, GTX1660Ti(6GB), cuda10.0。使用了自实现的DCNv2。windows上可能没linux上FPS高。
 - FPS由demo.py测得。预测50张图片，预测之前会有一个热身(warm up)阶段使速度稳定。
-- 320x320输入的PPYOLO模型没测mAP，感兴趣的读者可以自测，使用eval.py和test_dev.py。
 
 
 ## 咩酱刷屏时刻
@@ -53,6 +52,8 @@ Pytorch版PPYOLO: https://github.com/miemie2013/Pytorch-PPYOLO (mAP 44.8%)
 
 ## 已实现的部分
 
+EMA(指数滑动平均)：修改config/ppyolo_2x.py中self.use_ema = True打开。修改config/ppyolo_2x.py中self.use_ema = False关闭。
+
 DropBlock：随机丢弃特征图上的像素。
 
 IoU Loss：iou损失。
@@ -69,8 +70,6 @@ SPP：3个池化层的输出和原图拼接。
 
 
 ## 未实现的部分
-
-EMA(指数滑动平均)：修改config/ppyolo_2x.py中self.use_ema = True打开。修改config/ppyolo_2x.py中self.use_ema = False关闭。但是咩酱并没有成功实现，所以默认是False，请等待。
 
 多卡训练（由于咩酱只有一张6G的卡，也不是硕士生没有实验室，这部分可能不会实现）。
 
