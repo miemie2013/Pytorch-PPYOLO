@@ -9,6 +9,8 @@
 # ================================================================
 import torch
 import numpy as np
+import time
+import threading
 
 
 class ExponentialMovingAverage():
@@ -26,6 +28,7 @@ class ExponentialMovingAverage():
                 self._shadow[name] = param.cpu().detach().numpy().copy()
 
     def update(self):
+        start = time.time()
         for name, param in self._model.named_parameters():
             if param.requires_grad is True:
                 assert name in self._shadow
@@ -35,6 +38,8 @@ class ExponentialMovingAverage():
                 new_average = decay * old_val + (1 - decay) * new_val
                 self._shadow[name] = new_average
         self._update_step += 1
+        cost = time.time() - start
+        # print('cost time: {0:.6f}s'.format(cost))
         return decay
 
     def apply(self):

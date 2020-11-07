@@ -52,7 +52,7 @@ Pytorch版PPYOLO: https://github.com/miemie2013/Pytorch-PPYOLO (mAP 44.8%)
 
 ## 已实现的部分
 
-EMA(指数滑动平均)：修改config/ppyolo_2x.py中self.use_ema = True打开。修改config/ppyolo_2x.py中self.use_ema = False关闭。
+EMA(指数滑动平均)：修改config/ppyolo_2x.py中self.use_ema = True打开。修改config/ppyolo_2x.py中self.use_ema = False关闭。打开ema会拖慢训练速度。由于new_val = np.array(param.cpu().detach().numpy().copy())这一句本身是耗时的，而且无法与训练过程并行，咩酱暂时想不到好办法优化这一部分。
 
 DropBlock：随机丢弃特征图上的像素。
 
