@@ -10,7 +10,7 @@
 
 
 
-class PPYOLO_2x_Config(object):
+class PPYOLO_r18vd_Config(object):
     def __init__(self):
         # 自定义数据集
         # self.train_path = 'annotation_json/voc2012_train.json'
@@ -35,7 +35,7 @@ class PPYOLO_2x_Config(object):
             batch_size=8,
             num_threads=5,   # 读数据的线程数
             max_batch=3,     # 最大读多少个批
-            model_path='ppyolo_2x.pt',
+            model_path='ppyolo_r18vd.pt',
             # model_path='./weights/step00005000.pt',
             save_iter=1000,   # 每隔几步保存一次模型
             eval_iter=5000,   # 每隔几步计算一次eval集的mAP
@@ -45,9 +45,9 @@ class PPYOLO_2x_Config(object):
 
         # 验证。用于train.py、eval.py、test_dev.py
         self.eval_cfg = dict(
-            model_path='ppyolo_2x.pt',
+            model_path='ppyolo_r18vd.pt',
             # model_path='./weights/step00005000.pt',
-            target_size=608,
+            target_size=416,
             draw_image=False,    # 是否画出验证集图片
             draw_thresh=0.15,    # 如果draw_image==True，那么只画出分数超过draw_thresh的物体的预测框。
             eval_batch_size=4,   # 验证时的批大小。
@@ -55,9 +55,9 @@ class PPYOLO_2x_Config(object):
 
         # 测试。用于demo.py
         self.test_cfg = dict(
-            model_path='ppyolo_2x.pt',
+            model_path='ppyolo_r18vd.pt',
             # model_path='./weights/step00010000.pt',
-            target_size=608,
+            target_size=416,
             # target_size=320,
             draw_image=True,
             draw_thresh=0.15,   # 如果draw_image==True，那么只画出分数超过draw_thresh的物体的预测框。
@@ -78,20 +78,20 @@ class PPYOLO_2x_Config(object):
         self.head_type = 'YOLOv3Head'
         self.head = dict(
             num_classes=self.num_classes,
+            conv_block_num=0,
             norm_type='bn',
-            anchor_masks=[[6, 7, 8], [3, 4, 5], [0, 1, 2]],
-            anchors=[[10, 13], [16, 30], [33, 23],
-                     [30, 61], [62, 45], [59, 119],
-                     [116, 90], [156, 198], [373, 326]],
-            coord_conv=True,
-            iou_aware=True,
+            anchor_masks=[[3, 4, 5], [0, 1, 2]],
+            anchors=[[10, 14], [23, 27], [37, 58],
+                     [81, 82], [135, 169], [344, 319]],
+            coord_conv=False,
+            iou_aware=False,
             iou_aware_factor=0.4,
             scale_x_y=1.05,
-            spp=True,
+            spp=False,
             drop_block=True,
             keep_prob=0.9,
-            downsample=[32, 16, 8],
-            in_channels=[2048, 1024, 512],
+            downsample=[32, 16],
+            in_channels=[512, 256],
         )
         self.iou_loss_type = 'IouLoss'
         self.iou_loss = dict(
@@ -175,11 +175,10 @@ class PPYOLO_2x_Config(object):
         )
         # Gt2YoloTarget
         self.gt2YoloTarget = dict(
-            anchor_masks=[[6, 7, 8], [3, 4, 5], [0, 1, 2]],
-            anchors=[[10, 13], [16, 30], [33, 23],
-                     [30, 61], [62, 45], [59, 119],
-                     [116, 90], [156, 198], [373, 326]],
-            downsample_ratios=[32, 16, 8],
+            anchor_masks=[[3, 4, 5], [0, 1, 2]],
+            anchors=[[10, 14], [23, 27], [37, 58],
+                     [81, 82], [135, 169], [344, 319]],
+            downsample_ratios=[32, 16],
             num_classes=self.num_classes,
         )
         # ResizeImage

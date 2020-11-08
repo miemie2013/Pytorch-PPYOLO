@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 parser = argparse.ArgumentParser(description='PPYOLO Training Script')
 parser.add_argument('--use_gpu', type=bool, default=True)
 parser.add_argument('--config', type=int, default=0,
-                    choices=[0, 1],
-                    help='0 -- ppyolo_2x.py;  1 -- ppyolo_1x.py;  ')
+                    choices=[0, 1, 2],
+                    help='0 -- ppyolo_2x.py;  1 -- ppyolo_1x.py;  2 -- ppyolo_r18vd.py;  ')
 args = parser.parse_args()
 config_file = args.config
 use_gpu = args.use_gpu
@@ -52,7 +52,7 @@ if sysstr == 'Windows':
 
 
 def multi_thread_op(i, num_threads, batch_size, samples, context, with_mixup, sample_transforms, batch_transforms,
-                    shape, images, gt_bbox, gt_score, gt_class, target0, target1, target2):
+                    shape, images, gt_bbox, gt_score, gt_class, target0, target1, target2, target_num):
     for k in range(i, batch_size, num_threads):
         for sample_transform in sample_transforms:
             if isinstance(sample_transform, MixupImage):
@@ -74,7 +74,8 @@ def multi_thread_op(i, num_threads, batch_size, samples, context, with_mixup, sa
         gt_class[k] = np.expand_dims(samples[k]['gt_class'].astype(np.int32), 0)
         target0[k] = np.expand_dims(samples[k]['target0'].astype(np.float32), 0)
         target1[k] = np.expand_dims(samples[k]['target1'].astype(np.float32), 0)
-        target2[k] = np.expand_dims(samples[k]['target2'].astype(np.float32), 0)
+        if target_num > 2:
+            target2[k] = np.expand_dims(samples[k]['target2'].astype(np.float32), 0)
 
 
 def read_train_data(cfg,
@@ -85,7 +86,7 @@ def read_train_data(cfg,
                     _iter_id,
                     train_dic,
                     use_gpu,
-                    context, with_mixup, sample_transforms, batch_transforms):
+                    context, with_mixup, sample_transforms, batch_transforms, target_num):
     iter_id = _iter_id
     num_threads = cfg.train_cfg['num_threads']
     while True:   # 无限个epoch
@@ -117,7 +118,7 @@ def read_train_data(cfg,
             threads = []
             for i in range(num_threads):
                 t = threading.Thread(target=multi_thread_op, args=(i, num_threads, batch_size, samples, context, with_mixup, sample_transforms, batch_transforms,
-                                                                   shape, images, gt_bbox, gt_score, gt_class, target0, target1, target2))
+                                                                   shape, images, gt_bbox, gt_score, gt_class, target0, target1, target2, target_num))
                 threads.append(t)
                 t.start()
             # 等待所有线程任务结束。
@@ -130,7 +131,8 @@ def read_train_data(cfg,
             gt_class = np.concatenate(gt_class, 0)
             target0 = np.concatenate(target0, 0)
             target1 = np.concatenate(target1, 0)
-            target2 = np.concatenate(target2, 0)
+            if target_num > 2:
+                target2 = np.concatenate(target2, 0)
 
             images = torch.Tensor(images)
             gt_bbox = torch.Tensor(gt_bbox)
@@ -138,7 +140,8 @@ def read_train_data(cfg,
             gt_class = torch.Tensor(gt_class)
             target0 = torch.Tensor(target0)
             target1 = torch.Tensor(target1)
-            target2 = torch.Tensor(target2)
+            if target_num > 2:
+                target2 = torch.Tensor(target2)
             if use_gpu:
                 images = images.cuda()
                 gt_bbox = gt_bbox.cuda()
@@ -146,7 +149,8 @@ def read_train_data(cfg,
                 gt_class = gt_class.cuda()
                 target0 = target0.cuda()
                 target1 = target1.cuda()
-                target2 = target2.cuda()
+                if target_num > 2:
+                    target2 = target2.cuda()
 
             dic = {}
             dic['images'] = images
@@ -155,7 +159,8 @@ def read_train_data(cfg,
             dic['gt_class'] = gt_class
             dic['target0'] = target0
             dic['target1'] = target1
-            dic['target2'] = target2
+            if target_num > 2:
+                dic['target2'] = target2
             train_dic['%.8d'%iter_id] = dic
 
             # ==================== exit ====================
@@ -186,6 +191,8 @@ if __name__ == '__main__':
         cfg = PPYOLO_2x_Config()
     elif config_file == 1:
         cfg = PPYOLO_2x_Config()
+    elif config_file == 2:
+        cfg = PPYOLO_r18vd_Config()
 
     class_names = get_classes(cfg.classes_path)
     num_classes = len(class_names)
@@ -198,8 +205,10 @@ if __name__ == '__main__':
     backbone = Backbone(**cfg.backbone)
     IouLoss = select_loss(cfg.iou_loss_type)
     iou_loss = IouLoss(**cfg.iou_loss)
-    IouAwareLoss = select_loss(cfg.iou_aware_loss_type)
-    iou_aware_loss = IouAwareLoss(**cfg.iou_aware_loss)
+    iou_aware_loss = None
+    if cfg.head['iou_aware']:
+        IouAwareLoss = select_loss(cfg.iou_aware_loss_type)
+        iou_aware_loss = IouAwareLoss(**cfg.iou_aware_loss)
     Loss = select_loss(cfg.yolo_loss_type)
     yolo_loss = Loss(iou_loss=iou_loss, iou_aware_loss=iou_aware_loss, **cfg.yolo_loss)
     Head = select_head(cfg.head_type)
@@ -303,6 +312,7 @@ if __name__ == '__main__':
     train_steps = num_train // batch_size
 
     # 读数据的线程
+    target_num = len(cfg.head['anchor_masks'])
     train_dic ={}
     thr = threading.Thread(target=read_train_data,
                            args=(cfg,
@@ -313,7 +323,7 @@ if __name__ == '__main__':
                                  iter_id,
                                  train_dic,
                                  use_gpu,
-                                 context, with_mixup, sample_transforms, batch_transforms))
+                                 context, with_mixup, sample_transforms, batch_transforms, target_num))
     thr.start()
 
 
@@ -347,16 +357,22 @@ if __name__ == '__main__':
             gt_class = dic['gt_class']
             target0 = dic['target0']
             target1 = dic['target1']
-            target2 = dic['target2']
-            targets = [target0, target1, target2]
+            if target_num > 2:
+                target2 = dic['target2']
+                targets = [target0, target1, target2]
+            else:
+                targets = [target0, target1]
             losses = ppyolo(images, None, False, gt_bbox, gt_class, gt_score, targets)
             loss_xy = losses['loss_xy']
             loss_wh = losses['loss_wh']
             loss_obj = losses['loss_obj']
             loss_cls = losses['loss_cls']
             loss_iou = losses['loss_iou']
-            loss_iou_aware = losses['loss_iou_aware']
-            all_loss = loss_xy + loss_wh + loss_obj + loss_cls + loss_iou + loss_iou_aware
+            if cfg.head['iou_aware']:
+                loss_iou_aware = losses['loss_iou_aware']
+                all_loss = loss_xy + loss_wh + loss_obj + loss_cls + loss_iou + loss_iou_aware
+            else:
+                all_loss = loss_xy + loss_wh + loss_obj + loss_cls + loss_iou
 
             _all_loss = all_loss.cpu().data.numpy()
             _loss_xy = loss_xy.cpu().data.numpy()
@@ -364,7 +380,8 @@ if __name__ == '__main__':
             _loss_obj = loss_obj.cpu().data.numpy()
             _loss_cls = loss_cls.cpu().data.numpy()
             _loss_iou = loss_iou.cpu().data.numpy()
-            _loss_iou_aware = loss_iou_aware.cpu().data.numpy()
+            if cfg.head['iou_aware']:
+                _loss_iou_aware = loss_iou_aware.cpu().data.numpy()
 
             # 更新权重
             optimizer.zero_grad()  # 清空上一步的残余更新参数值
@@ -375,8 +392,13 @@ if __name__ == '__main__':
 
             # ==================== log ====================
             if iter_id % 20 == 0:
-                strs = 'Train iter: {}, all_loss: {:.6f}, loss_xy: {:.6f}, loss_wh: {:.6f}, loss_obj: {:.6f}, loss_cls: {:.6f}, loss_iou: {:.6f}, loss_iou_aware: {:.6f}, eta: {}'.format(
-                    iter_id, _all_loss, _loss_xy, _loss_wh, _loss_obj, _loss_cls, _loss_iou, _loss_iou_aware, eta)
+                strs = ''
+                if cfg.head['iou_aware']:
+                    strs = 'Train iter: {}, all_loss: {:.6f}, loss_xy: {:.6f}, loss_wh: {:.6f}, loss_obj: {:.6f}, loss_cls: {:.6f}, loss_iou: {:.6f}, loss_iou_aware: {:.6f}, eta: {}'.format(
+                        iter_id, _all_loss, _loss_xy, _loss_wh, _loss_obj, _loss_cls, _loss_iou, _loss_iou_aware, eta)
+                else:
+                    strs = 'Train iter: {}, all_loss: {:.6f}, loss_xy: {:.6f}, loss_wh: {:.6f}, loss_obj: {:.6f}, loss_cls: {:.6f}, loss_iou: {:.6f}, eta: {}'.format(
+                        iter_id, _all_loss, _loss_xy, _loss_wh, _loss_obj, _loss_cls, _loss_iou, eta)
                 logger.info(strs)
 
             # ==================== save ====================

@@ -197,7 +197,7 @@ class Resnet50Vd(torch.nn.Module):
 
 class BasicBlock(torch.nn.Module):
     def __init__(self, in_c, filters, bn, gn, af, stride=1, is_first=False):
-        super(ConvBlock, self).__init__()
+        super(BasicBlock, self).__init__()
         filters1, filters2 = filters
         stride1, stride2 = stride, 1
         self.is_first = is_first
@@ -237,7 +237,7 @@ class BasicBlock(torch.nn.Module):
 
 class Resnet18Vd(torch.nn.Module):
     def __init__(self, norm_type='bn', feature_maps=[4, 5], dcn_v2_stages=[], freeze_at=0):
-        super(Resnet50Vd, self).__init__()
+        super(Resnet18Vd, self).__init__()
         self.norm_type = norm_type
         self.feature_maps = feature_maps
         assert freeze_at in [0, 1, 2, 3, 4, 5]

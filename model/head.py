@@ -288,7 +288,10 @@ class DetectionBlock(torch.nn.Module):
                 is_test=is_test)
             self.layers.append(dropBlock)
         coordConv = CoordConv(coord_conv)
-        input_c = channel * 2 + 2 if coord_conv else channel * 2
+        if conv_block_num == 0:
+            input_c = in_c + 2 if coord_conv else in_c
+        else:
+            input_c = channel * 2 + 2 if coord_conv else channel * 2
         conv_unit = Conv2dUnit(input_c, channel, 1, stride=1, bn=bn, gn=gn, af=af, act='leaky')
         self.layers.append(coordConv)
         self.layers.append(conv_unit)
@@ -384,7 +387,7 @@ class YOLOv3Head(torch.nn.Module):
         for i in range(out_layer_num):
             in_c = self.in_channels[i]
             if i > 0:  # perform concat in first 2 detection_block
-                in_c = self.in_channels[i] + 64 * (2**out_layer_num) // (2**i)
+                in_c = self.in_channels[i] + 512 // (2**i)
             _detection_block = DetectionBlock(
                 in_c=in_c,
                 channel=64 * (2**out_layer_num) // (2**i),
