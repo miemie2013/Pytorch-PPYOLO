@@ -16,6 +16,8 @@ from model.resnet import *
 def select_backbone(name):
     if name == 'Resnet50Vd':
         return Resnet50Vd
+    if name == 'Resnet18Vd':
+        return Resnet18Vd
 
 def select_head(name):
     if name == 'YOLOv3Head':
