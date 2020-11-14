@@ -93,7 +93,10 @@ python setup.py build develop
 
 (1)环境搭建
 
-需要安装cuda10，Pytorch1.x。
+需要安装cuda10，Pytorch1.x。以及随意版本的Paddle来转换权重：
+```
+pip install paddlepaddle-gpu==1.8.4.post107 -i https://mirror.baidu.com/pypi/simple
+```
 
 (2)下载预训练模型
 
