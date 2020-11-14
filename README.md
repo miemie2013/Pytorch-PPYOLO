@@ -108,6 +108,18 @@ https://paddlemodels.bj.bcebos.com/object_detection/ppyolo.pdparams
 ```
 下载好后将它放在项目根目录下。然后运行1_ppyolo_2x_2pytorch.py得到一个ppyolo_2x.pt，它也位于根目录下。
 
+
+下载PaddleDetection的ppyolo_r18vd.pdparams。如果你使用Linux，请使用以下命令：
+```
+wget https://paddlemodels.bj.bcebos.com/object_detection/ppyolo_r18vd.pdparams
+```
+
+如果你使用Windows，请复制以下网址到浏览器或迅雷下载：
+```
+https://paddlemodels.bj.bcebos.com/object_detection/ppyolo_r18vd.pdparams
+```
+下载好后将它放在项目根目录下。然后运行1_ppyolo_r18vd_2pytorch.py得到一个ppyolo_r18vd.pt，它也位于根目录下。
+
 (3)预测图片、获取FPS（预测images/test/里的图片，结果保存在images/res/）
 
 (如果使用ppyolo_2x.py配置文件)
@@ -115,7 +127,10 @@ https://paddlemodels.bj.bcebos.com/object_detection/ppyolo.pdparams
 python demo.py --config=0
 ```
 
-
+(如果使用ppyolo_r18vd.py配置文件)
+```
+python demo.py --config=2
+```
 
 
 ## 训练
