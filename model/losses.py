@@ -328,24 +328,28 @@ class YOLOv3Loss(object):
         # 3. Get iou_mask by IoU between gt bbox and prediction bbox,
         #    Get obj_mask by tobj(holds gt_score), calculate objectness loss
         max_iou, _ = iou.max(-1)   # [bz, 3*13*13]   预测框与所有gt最高的iou
-        iou_mask = (max_iou <= ignore_thresh).float()   # [bz, 3*13*13]  负样本和忽略样本处为1
+        iou_mask = (max_iou <= ignore_thresh).float()   # [bz, 3*13*13]   候选负样本处为1
         if self.match_score:
             max_prob, _ = prob.max(-1)   # [bz, 3*13*13]   预测框所有类别最高分数
             iou_mask = iou_mask * (max_prob <= 0.25).float()   # 最高分数低于0.25的预测框，被视作负样本或者忽略样本，虽然在训练初期该分数不可信。
         output_shape = output.shape
         an_num = len(anchors) // 2
-        iou_mask = iou_mask.reshape((output_shape[0], an_num, output_shape[2], output_shape[3]))   # [bz, 3, 13, 13]  负样本和忽略样本处为1
+        iou_mask = iou_mask.reshape((output_shape[0], an_num, output_shape[2], output_shape[3]))   # [bz, 3, 13, 13]   候选负样本处为1
         iou_mask.requires_grad = False
 
         # NOTE: tobj holds gt_score, obj_mask holds object existence mask
         obj_mask = (tobj > 0.).float()   # [bz, 3, 13, 13]  正样本处为1
         obj_mask.requires_grad = False
 
+        # 候选负样本 中的 非正样本 才是负样本。所有样本中，正样本和负样本之外的样本是忽略样本。
+        noobj_mask = (1.0 - obj_mask) * iou_mask   # [N, 3, n_grid, n_grid]  负样本处为1
+        noobj_mask.requires_grad = False
+
         # For positive objectness grids, objectness loss should be calculated
         # For negative objectness grids, objectness loss is calculated only iou_mask == 1.0
         sigmoid_obj = torch.sigmoid(obj)
-        loss_obj_pos = tobj * obj_mask * (0 - torch.log(sigmoid_obj + 1e-9))   # 由于有mixup增强，tobj正样本处不一定为1.0
-        loss_obj_neg = (1.0 - obj_mask) * iou_mask * (0 - torch.log(1 - sigmoid_obj + 1e-9))   # 非正样本，而且与gt的最高iou <= ignore_thresh才是负样本
+        loss_obj_pos = tobj * (0 - torch.log(sigmoid_obj + 1e-9))   # 由于有mixup增强，tobj正样本处不一定为1.0
+        loss_obj_neg = noobj_mask * (0 - torch.log(1 - sigmoid_obj + 1e-9))   # 负样本的损失
         loss_obj_pos = loss_obj_pos.sum((1, 2, 3))
         loss_obj_neg = loss_obj_neg.sum((1, 2, 3))
 
