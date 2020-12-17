@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 def multi_thread_op(i, num_threads, batch_size, samples, context, with_mixup, sample_transforms, batch_transforms,
-                    shape, images, gt_bbox, gt_score, gt_class, target0, target1, target2, target_num):
+                    shape, images, gt_bbox, gt_score, gt_class, target0, target1, target2, n_layers):
     for k in range(i, batch_size, num_threads):
         for sample_transform in sample_transforms:
             if isinstance(sample_transform, MixupImage):
@@ -56,7 +56,7 @@ def multi_thread_op(i, num_threads, batch_size, samples, context, with_mixup, sa
         gt_class[k] = np.expand_dims(samples[k]['gt_class'].astype(np.int32), 0)
         target0[k] = np.expand_dims(samples[k]['target0'].astype(np.float32), 0)
         target1[k] = np.expand_dims(samples[k]['target1'].astype(np.float32), 0)
-        if target_num > 2:
+        if n_layers > 2:
             target2[k] = np.expand_dims(samples[k]['target2'].astype(np.float32), 0)
 
 
@@ -68,7 +68,8 @@ def read_train_data(cfg,
                     _iter_id,
                     train_dic,
                     use_gpu,
-                    context, with_mixup, sample_transforms, batch_transforms, target_num):
+                    n_layers,
+                    context, with_mixup, with_cutmix, mixup_steps, cutmix_steps, sample_transforms, batch_transforms):
     iter_id = _iter_id
     num_threads = cfg.train_cfg['num_threads']
     while True:   # 无限个epoch
@@ -95,12 +96,13 @@ def read_train_data(cfg,
             target1 = [None] * batch_size
             target2 = [None] * batch_size
 
-            samples = get_samples(train_records, train_indexes, step, batch_size, with_mixup)
+            samples = get_samples(train_records, train_indexes, step, batch_size, iter_id,
+                                  with_mixup, with_cutmix, mixup_steps, cutmix_steps)
             # sample_transforms用多线程
             threads = []
             for i in range(num_threads):
                 t = threading.Thread(target=multi_thread_op, args=(i, num_threads, batch_size, samples, context, with_mixup, sample_transforms, batch_transforms,
-                                                                   shape, images, gt_bbox, gt_score, gt_class, target0, target1, target2, target_num))
+                                                                   shape, images, gt_bbox, gt_score, gt_class, target0, target1, target2, n_layers))
                 threads.append(t)
                 t.start()
             # 等待所有线程任务结束。
@@ -113,7 +115,7 @@ def read_train_data(cfg,
             gt_class = np.concatenate(gt_class, 0)
             target0 = np.concatenate(target0, 0)
             target1 = np.concatenate(target1, 0)
-            if target_num > 2:
+            if n_layers > 2:
                 target2 = np.concatenate(target2, 0)
 
             images = torch.Tensor(images)
@@ -122,7 +124,7 @@ def read_train_data(cfg,
             gt_class = torch.Tensor(gt_class)
             target0 = torch.Tensor(target0)
             target1 = torch.Tensor(target1)
-            if target_num > 2:
+            if n_layers > 2:
                 target2 = torch.Tensor(target2)
             if use_gpu:
                 images = images.cuda()
@@ -131,7 +133,7 @@ def read_train_data(cfg,
                 gt_class = gt_class.cuda()
                 target0 = target0.cuda()
                 target1 = target1.cuda()
-                if target_num > 2:
+                if n_layers > 2:
                     target2 = target2.cuda()
 
             dic = {}
@@ -141,7 +143,7 @@ def read_train_data(cfg,
             dic['gt_class'] = gt_class
             dic['target0'] = target0
             dic['target1'] = target1
-            if target_num > 2:
+            if n_layers > 2:
                 dic['target2'] = target2
             train_dic['%.8d'%iter_id] = dic
 
@@ -165,6 +167,25 @@ def load_weights(model, model_path):
                 print('shape mismatch in %s. shape_1=%s, while shape_2=%s.' % (k, shape_1, shape_2))
     _state_dict.update(new_state_dict)
     model.load_state_dict(_state_dict)
+
+
+def calc_lr(iter_id, cfg):
+    base_lr = cfg.learningRate['base_lr']
+    piecewiseDecay = cfg.learningRate['PiecewiseDecay']
+    linearWarmup = cfg.learningRate['LinearWarmup']
+    gamma = piecewiseDecay['gamma']
+    milestones = piecewiseDecay['milestones']
+    start_factor = linearWarmup['start_factor']
+    steps = linearWarmup['steps']
+    n = len(milestones)
+    for i in range(n, 0, -1):
+        if iter_id >= milestones[i-1]:
+            return base_lr * gamma ** i
+    if iter_id <= steps:
+        k = (1.0 - start_factor) / steps
+        factor = start_factor + k * iter_id
+        return base_lr * factor
+    return base_lr
 
 
 if __name__ == '__main__':
@@ -245,27 +266,24 @@ if __name__ == '__main__':
     if use_gpu:   # 如果有gpu可用，模型（包括了权重weight）存放在gpu显存里
         model = model.cuda()
 
-    # aaaaaaaa = filter(lambda p: p.requires_grad, ppyolo.parameters())
-
+    # optimizer
+    # 不可以加正则化的参数：norm层(比如bn层、affine_channel层、gn层)的scale、offset；卷积层的偏移参数。
     param_groups = []
-    model.add_param_group(param_groups, cfg.learningRate['base_lr'], cfg.optimizerBuilder['regularizer']['factor'])
-
-    optimizer = torch.optim.SGD(param_groups, lr=cfg.train_cfg['lr'])   # requires_grad==True 的参数才可以被更新
+    base_lr = cfg.learningRate['base_lr']
+    base_wd = cfg.optimizerBuilder['regularizer']['factor']
+    model.add_param_group(param_groups, base_lr, base_wd)
+    optim_args = cfg.optimizerBuilder['optimizer'].copy()
+    optim_type = optim_args['type']   # 使用哪种优化器。Momentum、Adam、SGD、...之类的。
+    Optimizer = select_optimizer(optim_type)
+    del optim_args['type']
+    momentum = optim_args['momentum']
+    optimizer = Optimizer(param_groups, lr=base_lr, momentum=momentum, weight_decay=base_wd)
 
     ema = None
     if cfg.use_ema:
         ema = ExponentialMovingAverage(model, cfg.ema_decay)
         ema.register()
 
-    # 种类id
-    _catid2clsid = copy.deepcopy(catid2clsid)
-    _clsid2catid = copy.deepcopy(clsid2catid)
-    if num_classes != 80:   # 如果不是COCO数据集，而是自定义数据集
-        _catid2clsid = {}
-        _clsid2catid = {}
-        for k in range(num_classes):
-            _catid2clsid[k] = k
-            _clsid2catid[k] = k
     # 训练集
     train_dataset = COCO(cfg.train_path)
     train_img_ids = train_dataset.getImgIds()
@@ -285,40 +303,55 @@ if __name__ == '__main__':
 
     batch_size = cfg.train_cfg['batch_size']
     with_mixup = cfg.decodeImage['with_mixup']
+    with_cutmix = cfg.decodeImage['with_cutmix']
+    mixup_epoch = cfg.train_cfg['mixup_epoch']
+    cutmix_epoch = cfg.train_cfg['cutmix_epoch']
     context = cfg.context
     # 预处理
     # sample_transforms
-    decodeImage = DecodeImage(**cfg.decodeImage)   # 对图片解码。最开始的一步。
-    mixupImage = MixupImage(**cfg.mixupImage)      # mixup增强
-    colorDistort = ColorDistort(**cfg.colorDistort)  # 颜色扰动
-    randomExpand = RandomExpand(**cfg.randomExpand)  # 随机填充
-    randomCrop = RandomCrop(**cfg.randomCrop)        # 随机裁剪
-    randomFlipImage = RandomFlipImage(**cfg.randomFlipImage)  # 随机翻转
-    normalizeBox = NormalizeBox(**cfg.normalizeBox)        # 将物体的左上角坐标、右下角坐标中的横坐标/图片宽、纵坐标/图片高 以归一化坐标。
-    padBox = PadBox(**cfg.padBox)                          # 如果gt_bboxes的数量少于num_max_boxes，那么填充坐标是0的bboxes以凑够num_max_boxes。
-    bboxXYXY2XYWH = BboxXYXY2XYWH(**cfg.bboxXYXY2XYWH)     # sample['gt_bbox']被改写为cx_cy_w_h格式。
-    # batch_transforms改sample_transforms
-    randomShape = RandomShapeSingle(random_inter=cfg.randomShape['random_inter'])     # 多尺度训练。随机选一个尺度。也随机选一种插值方式。
-    normalizeImage = NormalizeImage(**cfg.normalizeImage)     # 图片归一化。先除以255归一化，再减均值除以标准差
-    permute = Permute(**cfg.permute)    # 图片从HWC格式变成CHW格式
-    gt2YoloTarget = Gt2YoloTargetSingle(**cfg.gt2YoloTarget)   # 填写target张量。
-
     sample_transforms = []
-    sample_transforms.append(decodeImage)
-    sample_transforms.append(mixupImage)
-    sample_transforms.append(colorDistort)
-    sample_transforms.append(randomExpand)
-    sample_transforms.append(randomCrop)
-    sample_transforms.append(randomFlipImage)
-    sample_transforms.append(normalizeBox)
-    sample_transforms.append(padBox)
-    sample_transforms.append(bboxXYXY2XYWH)
-
+    for preprocess_name in cfg.sample_transforms_seq:
+        if preprocess_name == 'decodeImage':
+            preprocess = DecodeImage(**cfg.decodeImage)   # 对图片解码。最开始的一步。
+        elif preprocess_name == 'mixupImage':
+            preprocess = MixupImage(**cfg.mixupImage)      # mixup增强
+        elif preprocess_name == 'colorDistort':
+            preprocess = ColorDistort(**cfg.colorDistort)  # 颜色扰动
+        elif preprocess_name == 'randomExpand':
+            preprocess = RandomExpand(**cfg.randomExpand)  # 随机填充
+        elif preprocess_name == 'randomCrop':
+            preprocess = RandomCrop(**cfg.randomCrop)        # 随机裁剪
+        elif preprocess_name == 'randomFlipImage':
+            preprocess = RandomFlipImage(**cfg.randomFlipImage)  # 随机翻转
+        elif preprocess_name == 'normalizeBox':
+            preprocess = NormalizeBox(**cfg.normalizeBox)        # 将物体的左上角坐标、右下角坐标中的横坐标/图片宽、纵坐标/图片高 以归一化坐标。
+        elif preprocess_name == 'padBox':
+            preprocess = PadBox(**cfg.padBox)         # 如果gt_bboxes的数量少于num_max_boxes，那么填充坐标是0的bboxes以凑够num_max_boxes。
+        elif preprocess_name == 'bboxXYXY2XYWH':
+            preprocess = BboxXYXY2XYWH(**cfg.bboxXYXY2XYWH)     # sample['gt_bbox']被改写为cx_cy_w_h格式。
+        sample_transforms.append(preprocess)
+    # batch_transforms
     batch_transforms = []
-    batch_transforms.append(randomShape)
-    batch_transforms.append(normalizeImage)
-    batch_transforms.append(permute)
-    batch_transforms.append(gt2YoloTarget)
+    for preprocess_name in cfg.batch_transforms_seq:
+        if preprocess_name == 'randomShape':
+            preprocess = RandomShapeSingle(random_inter=cfg.randomShape['random_inter'])     # 多尺度训练。随机选一个尺度。也随机选一种插值方式。
+        elif preprocess_name == 'normalizeImage':
+            preprocess = NormalizeImage(**cfg.normalizeImage)     # 图片归一化。先除以255归一化，再减均值除以标准差
+        elif preprocess_name == 'permute':
+            preprocess = Permute(**cfg.permute)    # 图片从HWC格式变成CHW格式
+        elif preprocess_name == 'gt2YoloTarget':
+            preprocess = Gt2YoloTargetSingle(**cfg.gt2YoloTarget)   # 填写target张量。
+        batch_transforms.append(preprocess)
+
+    print('\n=============== sample_transforms ===============')
+    for trf in sample_transforms:
+        print('%s' % str(type(trf)))
+    print('\n=============== batch_transforms ===============')
+    for trf in batch_transforms:
+        print('%s' % str(type(trf)))
+
+    # 输出几个特征图
+    n_layers = len(cfg.head['anchor_masks'])
 
     # 保存模型的目录
     if not os.path.exists('./weights'): os.mkdir('./weights')
@@ -329,10 +362,21 @@ if __name__ == '__main__':
 
     # 一轮的步数。丢弃最后几个样本。
     train_steps = num_train // batch_size
+    mixup_steps = mixup_epoch * train_steps
+    cutmix_steps = cutmix_epoch * train_steps
+    print('\n=============== mixup and cutmix ===============')
+    print('steps_per_epoch: %d' % train_steps)
+    if with_mixup:
+        print('mixup_steps: %d' % mixup_steps)
+    else:
+        print('don\'t use mixup.')
+    if with_cutmix:
+        print('cutmix_steps: %d' % cutmix_steps)
+    else:
+        print('don\'t use cutmix.')
 
     # 读数据的线程
-    target_num = len(cfg.head['anchor_masks'])
-    train_dic ={}
+    train_dic = {}
     thr = threading.Thread(target=read_train_data,
                            args=(cfg,
                                  train_indexes,
@@ -342,14 +386,13 @@ if __name__ == '__main__':
                                  iter_id,
                                  train_dic,
                                  use_gpu,
-                                 context, with_mixup, sample_transforms, batch_transforms, target_num))
+                                 n_layers,
+                                 context, with_mixup, with_cutmix, mixup_steps, cutmix_steps, sample_transforms, batch_transforms))
     thr.start()
 
 
     best_ap_list = [0.0, 0]  #[map, iter]
     while True:   # 无限个epoch
-        # 每个epoch之前洗乱
-        np.random.shuffle(train_indexes)
         for step in range(train_steps):
             iter_id += 1
 
@@ -376,33 +419,24 @@ if __name__ == '__main__':
             gt_class = dic['gt_class']
             target0 = dic['target0']
             target1 = dic['target1']
-            if target_num > 2:
+            if n_layers > 2:
                 target2 = dic['target2']
                 targets = [target0, target1, target2]
             else:
                 targets = [target0, target1]
             losses = model(images, None, False, gt_bbox, gt_class, gt_score, targets)
-            loss_xy = losses['loss_xy']
-            loss_wh = losses['loss_wh']
-            loss_obj = losses['loss_obj']
-            loss_cls = losses['loss_cls']
-            loss_iou = losses['loss_iou']
-            if cfg.head['iou_aware']:
-                loss_iou_aware = losses['loss_iou_aware']
-                all_loss = loss_xy + loss_wh + loss_obj + loss_cls + loss_iou + loss_iou_aware
-            else:
-                all_loss = loss_xy + loss_wh + loss_obj + loss_cls + loss_iou
-
+            all_loss = 0.0
+            loss_names = {}
+            for loss_name in losses.keys():
+                sub_loss = losses[loss_name]
+                all_loss += sub_loss
+                loss_names[loss_name] = sub_loss.cpu().data.numpy()
             _all_loss = all_loss.cpu().data.numpy()
-            _loss_xy = loss_xy.cpu().data.numpy()
-            _loss_wh = loss_wh.cpu().data.numpy()
-            _loss_obj = loss_obj.cpu().data.numpy()
-            _loss_cls = loss_cls.cpu().data.numpy()
-            _loss_iou = loss_iou.cpu().data.numpy()
-            if cfg.head['iou_aware']:
-                _loss_iou_aware = loss_iou_aware.cpu().data.numpy()
 
             # 更新权重
+            lr = calc_lr(iter_id, cfg)
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = lr * param_group['base_lr'] / base_lr
             optimizer.zero_grad()  # 清空上一步的残余更新参数值
             all_loss.backward()  # 误差反向传播, 计算参数更新值
             optimizer.step()  # 将参数更新值施加到 net 的 parameters 上
@@ -411,13 +445,12 @@ if __name__ == '__main__':
 
             # ==================== log ====================
             if iter_id % 20 == 0:
-                strs = ''
-                if cfg.head['iou_aware']:
-                    strs = 'Train iter: {}, all_loss: {:.6f}, loss_xy: {:.6f}, loss_wh: {:.6f}, loss_obj: {:.6f}, loss_cls: {:.6f}, loss_iou: {:.6f}, loss_iou_aware: {:.6f}, eta: {}'.format(
-                        iter_id, _all_loss, _loss_xy, _loss_wh, _loss_obj, _loss_cls, _loss_iou, _loss_iou_aware, eta)
-                else:
-                    strs = 'Train iter: {}, all_loss: {:.6f}, loss_xy: {:.6f}, loss_wh: {:.6f}, loss_obj: {:.6f}, loss_cls: {:.6f}, loss_iou: {:.6f}, eta: {}'.format(
-                        iter_id, _all_loss, _loss_xy, _loss_wh, _loss_obj, _loss_cls, _loss_iou, eta)
+                lr = optimizer.param_groups[0]['lr']
+                each_loss = ''
+                for loss_name in loss_names.keys():
+                    loss_value = loss_names[loss_name]
+                    each_loss += ' %s: %.3f,' % (loss_name, loss_value)
+                strs = 'Train iter: {}, lr: {:.9f}, all_loss: {:.3f},{} eta: {}'.format(iter_id, lr, _all_loss, each_loss, eta)
                 logger.info(strs)
 
             # ==================== save ====================

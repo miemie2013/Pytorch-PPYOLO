@@ -230,6 +230,14 @@ class DetectionBlock(torch.nn.Module):
             tip = ly(tip)
         return route, tip
 
+    def add_param_group(self, param_groups, base_lr, base_wd):
+        for layer in self.layers:
+            if isinstance(layer, Conv2dUnit):
+                layer.add_param_group(param_groups, base_lr, base_wd)
+        for layer in self.tip_layers:
+            if isinstance(layer, Conv2dUnit):
+                layer.add_param_group(param_groups, base_lr, base_wd)
+
 
 class YOLOv3Head(torch.nn.Module):
     def __init__(self,
@@ -354,6 +362,15 @@ class YOLOv3Head(torch.nn.Module):
                 upsample = torch.nn.Upsample(scale_factor=2, mode='nearest')
                 self.upsample_layers.append(conv_unit)
                 self.upsample_layers.append(upsample)
+
+    def add_param_group(self, param_groups, base_lr, base_wd):
+        for detection_block in self.detection_blocks:
+            detection_block.add_param_group(param_groups, base_lr, base_wd)
+        for layer in self.yolo_output_convs:
+            layer.add_param_group(param_groups, base_lr, base_wd)
+        for layer in self.upsample_layers:
+            if isinstance(layer, Conv2dUnit):
+                layer.add_param_group(param_groups, base_lr, base_wd)
 
     def set_dropblock(self, is_test):
         for detection_block in self.detection_blocks:

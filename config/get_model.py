@@ -31,6 +31,15 @@ def select_loss(name):
     if name == 'IouAwareLoss':
         return IouAwareLoss
 
+def select_optimizer(name):
+    if name == 'Momentum':
+        return torch.optim.SGD
+    if name == 'Adam':
+        return torch.optim.Adam
+    if name == 'SGD':
+        return torch.optim.SGD
+
+
 
 
 

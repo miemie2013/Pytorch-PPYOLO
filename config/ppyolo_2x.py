@@ -26,6 +26,8 @@ class PPYOLO_2x_Config(object):
         self.classes_path = 'data/coco_classes.txt'
         self.train_pre_path = '../COCO/train2017/'  # 训练集图片相对路径
         self.val_pre_path = '../COCO/val2017/'      # 验证集图片相对路径
+        self.test_path = '../COCO/annotations/image_info_test-dev2017.json'      # test集
+        self.test_pre_path = '../COCO/test2017/'    # test集图片相对路径
         self.num_classes = 80                       # 数据集类别数
 
 
@@ -97,6 +99,8 @@ class PPYOLO_2x_Config(object):
             dcn_v2_stages=[5],
             downsample_in3x3=True,   # 注意这个细节，是在3x3卷积层下采样的。
             freeze_at=5,
+            freeze_norm=False,
+            norm_decay=0.,
         )
         self.head_type = 'YOLOv3Head'
         self.head = dict(
@@ -211,5 +215,22 @@ class PPYOLO_2x_Config(object):
             target_size=608,
             interp=2,
         )
+
+        # 预处理顺序。增加一些数据增强时这里也要加上，否则train.py中相当于没加！
+        self.sample_transforms_seq = []
+        self.sample_transforms_seq.append('decodeImage')
+        self.sample_transforms_seq.append('mixupImage')
+        self.sample_transforms_seq.append('colorDistort')
+        self.sample_transforms_seq.append('randomExpand')
+        self.sample_transforms_seq.append('randomCrop')
+        self.sample_transforms_seq.append('randomFlipImage')
+        self.sample_transforms_seq.append('normalizeBox')
+        self.sample_transforms_seq.append('padBox')
+        self.sample_transforms_seq.append('bboxXYXY2XYWH')
+        self.batch_transforms_seq = []
+        self.batch_transforms_seq.append('randomShape')
+        self.batch_transforms_seq.append('normalizeImage')
+        self.batch_transforms_seq.append('permute')
+        self.batch_transforms_seq.append('gt2YoloTarget')
 
 

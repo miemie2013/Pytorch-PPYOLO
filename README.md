@@ -56,6 +56,8 @@ Pytorch版PPYOLO: https://github.com/miemie2013/Pytorch-PPYOLO (mAP 44.8%)
 
 2020/11/05:咩酱成功实现DCNv2，不用编译c、c++、cuda、自定义op这些玩意了！
 
+2020/12/17:加入L2权重衰减、学习率warm up和学习率分段衰减。
+
 ## 已实现的部分
 
 EMA(指数滑动平均)：修改config/ppyolo_2x.py中self.use_ema = True打开。修改config/ppyolo_2x.py中self.use_ema = False关闭。打开ema会拖慢训练速度。由于new_val = np.array(param.cpu().detach().numpy().copy())这一句本身是耗时的，而且无法与训练过程并行，咩酱暂时想不到好办法优化这一部分。
@@ -135,6 +137,39 @@ python demo.py --config=0
 python demo.py --config=2
 ```
 
+## 数据集的放置位置
+数据集应该和本项目位于同一级目录。一个示例：
+```
+D://GitHub
+     |------COCO
+     |        |------annotations
+     |        |------test2017
+     |        |------train2017
+     |        |------val2017
+     |
+     |------VOCdevkit
+     |        |------VOC2007
+     |        |        |------Annotations
+     |        |        |------ImageSets
+     |        |        |------JPEGImages
+     |        |        |------SegmentationClass
+     |        |        |------SegmentationObject
+     |        |
+     |        |------VOC2012
+     |                 |------Annotations
+     |                 |------ImageSets
+     |                 |------JPEGImages
+     |                 |------SegmentationClass
+     |                 |------SegmentationObject
+     |
+     |------Pytorch-PPYOLO-master
+              |------annotation
+              |------config
+              |------data
+              |------model
+              |------...
+```
+
 
 ## 训练
 (如果使用ppyolo_2x.py配置文件)
@@ -155,10 +190,13 @@ xxx.jpg 18.19,6.32,424.13,421.83,20 323.86,2.65,640.0,421.94,20
 xxx.jpg 48,240,195,371,11 8,12,352,498,14
 # 图片名 物体1左上角x坐标,物体1左上角y坐标,物体1右下角x坐标,物体1右下角y坐标,物体1类别id 物体2左上角x坐标,物体2左上角y坐标,物体2右下角x坐标,物体2右下角y坐标,物体2类别id ...
 ```
+注意：xxx.jpg仅仅是文件名而不是文件的路径！xxx.jpg仅仅是文件名而不是文件的路径！xxx.jpg仅仅是文件名而不是文件的路径！
+
 运行1_txt2json.py会在annotation_json目录下生成两个coco注解风格的json注解文件，这是train.py支持的注解文件格式。
 在config/ppyolo_2x.py里修改train_path、val_path、classes_path、train_pre_path、val_pre_path、num_classes这6个变量（自带的voc2012数据集直接解除注释就ok了）,就可以开始训练自己的数据集了。
-而且，直接加载ppyolo_2x.pt的权重训练也是可以的，这时候也仅仅不加载3个输出卷积层的6个权重（因为类别数不同导致了输出通道数不同）。
+而且，直接加载ppyolo_2x.pt的权重（即配置文件里修改train_cfg的model_path为'ppyolo_2x.pt'）训练也是可以的，这时候也仅仅不加载3个输出卷积层的6个权重（因为类别数不同导致了输出通道数不同）。
 如果需要跑demo.py、eval.py，与数据集有关的变量也需要修改一下，应该很容易看懂。
+
 
 ## 评估
 (如果使用ppyolo_2x.py配置文件)
