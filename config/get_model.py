@@ -10,7 +10,7 @@
 from model.losses import *
 from model.iou_losses import *
 from model.head import *
-from model.resnet import *
+from model.resnet_vd import *
 
 
 def select_backbone(name):

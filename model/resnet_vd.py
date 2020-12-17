@@ -3,8 +3,8 @@
 # ================================================================
 #
 #   Author      : miemie2013
-#   Created date: 2020-10-15 14:50:03
-#   Description : pytorch_ppyolo
+#   Created date:
+#   Description :
 #
 # ================================================================
 import torch
