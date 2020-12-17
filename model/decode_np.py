@@ -45,9 +45,9 @@ class Decode(object):
             classes = np.array([])
             scores = np.array([])
         else:
-            boxes = pred[0, :, 2:]
-            scores = pred[0, :, 1]
-            classes = pred[0, :, 0].astype(np.int32)
+            boxes = pred[0][:, 2:]
+            scores = pred[0][:, 1]
+            classes = pred[0][:, 0].astype(np.int32)
         if len(scores) > 0 and draw_image:
             pos = np.where(scores >= draw_thresh)
             boxes2 = boxes[pos]         # [M, 4]
@@ -63,17 +63,13 @@ class Decode(object):
             classes = np.array([])
             scores = np.array([])
         else:
-            boxes = pred[i, :, 2:]
-            scores = pred[i, :, 1]
-            classes = pred[i, :, 0].astype(np.int32)
-            pos = np.where(scores >= 0.0)
-            boxes = boxes[pos]  # [M, 4]
-            scores = scores[pos]  # [M, ]
-            classes = classes[pos]  # [M, ]
+            boxes = pred[i][:, 2:]
+            scores = pred[i][:, 1]
+            classes = pred[i][:, 0].astype(np.int32)
         if len(scores) > 0 and draw_image:
             pos = np.where(scores >= draw_thresh)
-            boxes2 = boxes[pos]  # [M, 4]
-            scores2 = scores[pos]  # [M, ]
+            boxes2 = boxes[pos]      # [M, 4]
+            scores2 = scores[pos]    # [M, ]
             classes2 = classes[pos]  # [M, ]
             self.draw(batch_img[i], boxes2, scores2, classes2)
         result_image[i] = batch_img[i]
@@ -149,9 +145,9 @@ class Decode(object):
         if self.use_gpu:
             image = image.cuda()
             im_size = im_size.cuda()
-        pred = self._yolo(image, im_size)
-        pred = pred.cpu().detach().numpy()   # [bs, M, 6]
-        return pred
+        preds = self._yolo(image, im_size)
+        preds = [pred.cpu().detach().numpy() for pred in preds]
+        return preds
 
 
 

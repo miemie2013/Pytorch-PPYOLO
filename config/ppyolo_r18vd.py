@@ -31,7 +31,6 @@ class PPYOLO_r18vd_Config(object):
 
         # ========= 一些设置 =========
         self.train_cfg = dict(
-            lr=0.0001,
             batch_size=8,
             num_threads=5,   # 读数据的线程数
             max_batch=3,     # 最大读多少个批
@@ -39,7 +38,30 @@ class PPYOLO_r18vd_Config(object):
             # model_path='./weights/step00005000.pt',
             save_iter=1000,   # 每隔几步保存一次模型
             eval_iter=5000,   # 每隔几步计算一次eval集的mAP
-            max_iters=500000,   # 训练多少步
+            max_iters=250000,   # 训练多少步
+            mixup_epoch=10,     # 前几轮进行mixup
+            cutmix_epoch=-1,    # 前几轮进行cutmix
+        )
+        self.learningRate = dict(
+            base_lr=0.0001,
+            PiecewiseDecay=dict(
+                gamma=0.1,
+                milestones=[150000, 200000],
+            ),
+            LinearWarmup=dict(
+                start_factor=0.,
+                steps=4000,
+            ),
+        )
+        self.optimizerBuilder = dict(
+            optimizer=dict(
+                momentum=0.9,
+                type='Momentum',
+            ),
+            regularizer=dict(
+                factor=0.0005,
+                type='L2',
+            ),
         )
 
 
@@ -130,6 +152,7 @@ class PPYOLO_r18vd_Config(object):
         self.decodeImage = dict(
             to_rgb=True,
             with_mixup=True,
+            with_cutmix=False,
         )
         # MixupImage
         self.mixupImage = dict(

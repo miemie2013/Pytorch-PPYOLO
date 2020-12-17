@@ -18,6 +18,7 @@ import argparse
 from tools.cocotools import eval
 from model.decode_np import Decode
 from model.ppyolo import PPYOLO
+from tools.argparser import ArgParser
 from tools.cocotools import get_classes
 
 import logging
@@ -25,24 +26,18 @@ FORMAT = '%(asctime)s-%(levelname)s: %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
 
-parser = argparse.ArgumentParser(description='PPYOLO Eval Script')
-parser.add_argument('--use_gpu', type=bool, default=True)
-parser.add_argument('--config', type=int, default=0,
-                    choices=[0, 1, 2],
-                    help='0 -- ppyolo_2x.py;  1 -- ppyolo_1x.py;  2 -- ppyolo_r18vd.py;  ')
-args = parser.parse_args()
-config_file = args.config
-use_gpu = args.use_gpu
 
 if __name__ == '__main__':
-    cfg = None
-    if config_file == 0:
-        cfg = PPYOLO_2x_Config()
-    elif config_file == 1:
-        cfg = PPYOLO_2x_Config()
-    elif config_file == 2:
-        cfg = PPYOLO_r18vd_Config()
-
+    parser = ArgParser()
+    use_gpu = parser.get_use_gpu()
+    cfg = parser.get_cfg()
+    print(torch.__version__)
+    import platform
+    sysstr = platform.system()
+    print(torch.cuda.is_available())
+    # 禁用cudnn就能解决Windows报错问题。Windows用户如果删掉之后不报CUDNN_STATUS_EXECUTION_FAILED，那就可以删掉。
+    if sysstr == 'Windows':
+        torch.backends.cudnn.enabled = False
 
     # 读取的模型
     model_path = cfg.eval_cfg['model_path']
@@ -54,17 +49,44 @@ if __name__ == '__main__':
     # 验证时的批大小
     eval_batch_size = cfg.eval_cfg['eval_batch_size']
 
+    # 打印，确认一下使用的配置
+    print('\n=============== config message ===============')
+    print('config file: %s' % str(type(cfg)))
+    print('model_path: %s' % model_path)
+    print('target_size: %d' % cfg.eval_cfg['target_size'])
+    print('use_gpu: %s' % str(use_gpu))
+    print()
+
     # test集图片的相对路径
-    test_pre_path = '../COCO/test2017/'
-    anno_file = '../COCO/annotations/image_info_test-dev2017.json'
+    test_pre_path = cfg.test_pre_path
+    anno_file = cfg.test_path
     with open(anno_file, 'r', encoding='utf-8') as f2:
         for line in f2:
             line = line.strip()
             dataset = json.loads(line)
             images = dataset['images']
 
-    all_classes = get_classes(cfg.classes_path)
-    num_classes = len(all_classes)
+    # 种类id
+    _catid2clsid = {}
+    _clsid2catid = {}
+    _clsid2cname = {}
+    with open(cfg.val_path, 'r', encoding='utf-8') as f2:
+        dataset_text = ''
+        for line in f2:
+            line = line.strip()
+            dataset_text += line
+        eval_dataset = json.loads(dataset_text)
+        categories = eval_dataset['categories']
+        for clsid, cate_dic in enumerate(categories):
+            catid = cate_dic['id']
+            cname = cate_dic['name']
+            _catid2clsid[catid] = clsid
+            _clsid2catid[clsid] = catid
+            _clsid2cname[clsid] = cname
+    class_names = []
+    num_classes = len(_clsid2cname.keys())
+    for clsid in range(num_classes):
+        class_names.append(_clsid2cname[clsid])
 
 
     # 创建模型
@@ -72,18 +94,13 @@ if __name__ == '__main__':
     backbone = Backbone(**cfg.backbone)
     Head = select_head(cfg.head_type)
     head = Head(yolo_loss=None, nms_cfg=cfg.nms_cfg, **cfg.head)
-    ppyolo = PPYOLO(backbone, head)
+    model = PPYOLO(backbone, head)
     if use_gpu:
-        ppyolo = ppyolo.cuda()
-    ppyolo.load_state_dict(torch.load(model_path))
-    ppyolo.eval()  # 必须调用model.eval()来设置dropout和batch normalization layers在运行推理前，切换到评估模式. 不这样做的化会产生不一致的推理结果.
+        model = model.cuda()
+    model.load_state_dict(torch.load(model_path))
+    model.eval()  # 必须调用model.eval()来设置dropout和batch normalization layers在运行推理前，切换到评估模式。
+    head.set_dropblock(is_test=True)
 
-    _clsid2catid = copy.deepcopy(clsid2catid)
-    if num_classes != 80:   # 如果不是COCO数据集，而是自定义数据集
-        _clsid2catid = {}
-        for k in range(num_classes):
-            _clsid2catid[k] = k
-
-    _decode = Decode(ppyolo, all_classes, use_gpu, cfg, for_test=False)
+    _decode = Decode(model, class_names, use_gpu, cfg, for_test=False)
     eval(_decode, images, test_pre_path, anno_file, eval_batch_size, _clsid2catid, draw_image, draw_thresh, type='test_dev')
 

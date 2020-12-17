@@ -14,7 +14,7 @@ import torch as T
 import torch.nn.functional as F
 import copy
 
-from model.custom_layers import Conv2dUnit
+from model.custom_layers import *
 from model.matrix_nms import matrix_nms
 
 
@@ -142,91 +142,6 @@ def get_iou_aware_score(output, an_num, num_classes, iou_aware_factor):
 
 
 
-class CoordConv(torch.nn.Module):
-    def __init__(self, coord_conv=True):
-        super(CoordConv, self).__init__()
-        self.coord_conv = coord_conv
-
-    def __call__(self, input):
-        if not self.coord_conv:
-            return input
-        b = input.shape[0]
-        h = input.shape[2]
-        w = input.shape[3]
-        x_range = T.arange(0, w, dtype=T.float32, device=input.device) / (w - 1) * 2.0 - 1
-        y_range = T.arange(0, h, dtype=T.float32, device=input.device) / (h - 1) * 2.0 - 1
-        x_range = x_range[np.newaxis, np.newaxis, np.newaxis, :].repeat((b, 1, h, 1))
-        y_range = y_range[np.newaxis, np.newaxis, :, np.newaxis].repeat((b, 1, 1, w))
-        offset = T.cat([input, x_range, y_range], dim=1)
-        return offset
-
-
-class SPP(torch.nn.Module):
-    def __init__(self):
-        super(SPP, self).__init__()
-
-    def __call__(self, x):
-        x_1 = x
-        x_2 = F.max_pool2d(x, 5, 1, 2)
-        x_3 = F.max_pool2d(x, 9, 1, 4)
-        x_4 = F.max_pool2d(x, 13, 1, 6)
-        out = torch.cat([x_1, x_2, x_3, x_4], dim=1)
-        return out
-
-
-class DropBlock(torch.nn.Module):
-    def __init__(self,
-                 block_size=3,
-                 keep_prob=0.9,
-                 is_test=False):
-        super(DropBlock, self).__init__()
-        self.block_size = block_size
-        self.keep_prob = keep_prob
-        self.is_test = is_test
-
-    def __call__(self, input):
-        if self.is_test:
-            return input
-
-        def CalculateGamma(input, block_size, keep_prob):
-            h = input.shape[2]  # int
-            h = np.array([h])
-            h = torch.tensor(h, dtype=torch.float32, device=input.device)
-            feat_shape_t = h.reshape((1, 1, 1, 1))  # shape: [1, 1, 1, 1]
-            feat_area = torch.pow(feat_shape_t, 2)  # shape: [1, 1, 1, 1]
-
-            block_shape_t = torch.zeros((1, 1, 1, 1), dtype=torch.float32, device=input.device) + block_size
-            block_area = torch.pow(block_shape_t, 2)
-
-            useful_shape_t = feat_shape_t - block_shape_t + 1
-            useful_area = torch.pow(useful_shape_t, 2)
-
-            upper_t = feat_area * (1 - keep_prob)
-            bottom_t = block_area * useful_area
-            output = upper_t / bottom_t
-            return output
-
-        gamma = CalculateGamma(input, block_size=self.block_size, keep_prob=self.keep_prob)
-        input_shape = input.shape
-        p = gamma.repeat(input_shape)
-
-        input_shape_tmp = input.shape
-        random_matrix = torch.rand(input_shape_tmp, device=input.device)
-        one_zero_m = (random_matrix < p).float()
-
-        mask_flag = torch.nn.functional.max_pool2d(one_zero_m, (self.block_size, self.block_size), stride=1, padding=1)
-        mask = 1.0 - mask_flag
-
-        elem_numel = input_shape[0] * input_shape[1] * input_shape[2] * input_shape[3]
-        elem_numel_m = float(elem_numel)
-
-        elem_sum = mask.sum()
-
-        output = input * mask * elem_numel_m / elem_sum
-        return output
-
-
-
 
 class DetectionBlock(torch.nn.Module):
     def __init__(self,
@@ -236,16 +151,19 @@ class DetectionBlock(torch.nn.Module):
                  bn=0,
                  gn=0,
                  af=0,
+                 norm_decay=0.,
                  conv_block_num=2,
                  is_first=False,
                  use_spp=True,
                  drop_block=True,
                  block_size=3,
                  keep_prob=0.9,
-                 is_test=True):
+                 is_test=True,
+                 name=''):
         super(DetectionBlock, self).__init__()
         assert channel % 2 == 0, \
             "channel {} cannot be divided by 2".format(channel)
+        self.norm_decay = norm_decay
         self.use_spp = use_spp
         self.coord_conv = coord_conv
         self.is_first = is_first
@@ -259,18 +177,18 @@ class DetectionBlock(torch.nn.Module):
         for j in range(conv_block_num):
             coordConv = CoordConv(coord_conv)
             input_c = in_c + 2 if coord_conv else in_c
-            conv_unit1 = Conv2dUnit(input_c, channel, 1, stride=1, bn=bn, gn=gn, af=af, act='leaky')
+            conv_unit1 = Conv2dUnit(input_c, channel, 1, stride=1, bn=bn, gn=gn, af=af, act='leaky', norm_decay=self.norm_decay, name='{}.{}.0'.format(name, j))
             self.layers.append(coordConv)
             self.layers.append(conv_unit1)
             if self.use_spp and is_first and j == 1:
                 spp = SPP()
-                conv_unit2 = Conv2dUnit(channel * 4, 512, 1, stride=1, bn=bn, gn=gn, af=af, act='leaky')
-                conv_unit3 = Conv2dUnit(512, channel * 2, 3, stride=1, bn=bn, gn=gn, af=af, act='leaky')
+                conv_unit2 = Conv2dUnit(channel * 4, 512, 1, stride=1, bn=bn, gn=gn, af=af, act='leaky', norm_decay=self.norm_decay, name='{}.{}.spp.conv'.format(name, j))
+                conv_unit3 = Conv2dUnit(512, channel * 2, 3, stride=1, bn=bn, gn=gn, af=af, act='leaky', norm_decay=self.norm_decay, name='{}.{}.1'.format(name, j))
                 self.layers.append(spp)
                 self.layers.append(conv_unit2)
                 self.layers.append(conv_unit3)
             else:
-                conv_unit3 = Conv2dUnit(channel, channel * 2, 3, stride=1, bn=bn, gn=gn, af=af, act='leaky')
+                conv_unit3 = Conv2dUnit(channel, channel * 2, 3, stride=1, bn=bn, gn=gn, af=af, act='leaky', norm_decay=self.norm_decay, name='{}.{}.1'.format(name, j))
                 self.layers.append(conv_unit3)
 
             if self.drop_block and j == 0 and not is_first:
@@ -292,13 +210,13 @@ class DetectionBlock(torch.nn.Module):
             input_c = in_c + 2 if coord_conv else in_c
         else:
             input_c = channel * 2 + 2 if coord_conv else channel * 2
-        conv_unit = Conv2dUnit(input_c, channel, 1, stride=1, bn=bn, gn=gn, af=af, act='leaky')
+        conv_unit = Conv2dUnit(input_c, channel, 1, stride=1, bn=bn, gn=gn, af=af, act='leaky', norm_decay=self.norm_decay, name='{}.2'.format(name))
         self.layers.append(coordConv)
         self.layers.append(conv_unit)
 
         coordConv = CoordConv(coord_conv)
         input_c = channel + 2 if coord_conv else channel
-        conv_unit = Conv2dUnit(input_c, channel * 2, 3, stride=1, bn=bn, gn=gn, af=af, act='leaky')
+        conv_unit = Conv2dUnit(input_c, channel * 2, 3, stride=1, bn=bn, gn=gn, af=af, act='leaky', norm_decay=self.norm_decay, name='{}.tip'.format(name))
         self.tip_layers.append(coordConv)
         self.tip_layers.append(conv_unit)
 
@@ -322,6 +240,7 @@ class YOLOv3Head(torch.nn.Module):
                           [116, 90], [156, 198], [373, 326]],
                  anchor_masks=[[6, 7, 8], [3, 4, 5], [0, 1, 2]],
                  norm_type="bn",
+                 norm_decay=0.,
                  coord_conv=True,
                  iou_aware=True,
                  iou_aware_factor=0.4,
@@ -335,12 +254,15 @@ class YOLOv3Head(torch.nn.Module):
                  downsample=[32, 16, 8],
                  in_channels=[2048, 1024, 512],
                  nms_cfg=None,
+                 focalloss_on_obj=False,
+                 prior_prob=0.01,
                  is_train=False
                  ):
         super(YOLOv3Head, self).__init__()
         self.conv_block_num = conv_block_num
         self.num_classes = num_classes
         self.norm_type = norm_type
+        self.norm_decay = norm_decay
         self.coord_conv = coord_conv
         self.iou_aware = iou_aware
         self.iou_aware_factor = iou_aware_factor
@@ -356,6 +278,8 @@ class YOLOv3Head(torch.nn.Module):
         self.in_channels = in_channels
         self.yolo_loss = yolo_loss
         self.nms_cfg = nms_cfg
+        self.focalloss_on_obj = focalloss_on_obj
+        self.prior_prob = prior_prob
         self.is_train = is_train
 
         _anchors = copy.deepcopy(anchors)
@@ -370,15 +294,8 @@ class YOLOv3Head(torch.nn.Module):
                 temp += anchors[aid]
             self.mask_anchors.append(temp)
 
-        bn = 0
-        gn = 0
-        af = 0
-        if norm_type == 'bn':
-            bn = 1
-        elif norm_type == 'gn':
-            gn = 1
-        elif norm_type == 'affine_channel':
-            af = 1
+        assert norm_type in ['bn', 'sync_bn', 'gn', 'affine_channel']
+        bn, gn, af = get_norm(norm_type)
 
         self.detection_blocks = torch.nn.ModuleList()
         self.yolo_output_convs = torch.nn.ModuleList()
@@ -395,27 +312,44 @@ class YOLOv3Head(torch.nn.Module):
                 bn=bn,
                 gn=gn,
                 af=af,
+                norm_decay=self.norm_decay,
                 is_first=i == 0,
                 conv_block_num=self.conv_block_num,
                 use_spp=self.use_spp,
                 drop_block=self.drop_block,
                 block_size=self.block_size,
                 keep_prob=self.keep_prob,
-                is_test=(not self.is_train)
+                is_test=(not self.is_train),
+                name="yolo_block.{}".format(i)
             )
             # out channel number = mask_num * (5 + class_num)
             if self.iou_aware:
                 num_filters = len(self.anchor_masks[i]) * (self.num_classes + 6)
             else:
                 num_filters = len(self.anchor_masks[i]) * (self.num_classes + 5)
-            yolo_output_conv = Conv2dUnit(64 * (2**out_layer_num) // (2**i) * 2, num_filters, 1, stride=1, bias_attr=True, bn=0, gn=0, af=0, act=None)
+            bias_init = None
+            # if self.focalloss_on_obj:
+            #     # 设置偏移的初始值使得obj预测概率初始值为self.prior_prob (根据激活函数是sigmoid()时推导出)
+            #     bias_init_value = -math.log((1 - self.prior_prob) / self.prior_prob)
+            #     bias_init_array = np.zeros((num_filters, ), np.float32)
+            #     an_num = len(self.anchor_masks[i])
+            #     start = 0
+            #     stride = (self.num_classes + 5)
+            #     if self.iou_aware:
+            #         start = an_num
+            #     # 只设置置信位
+            #     for o in range(an_num):
+            #         bias_init_array[start + o * stride + 4] = bias_init_value
+            #     bias_init = fluid.initializer.NumpyArrayInitializer(bias_init_array)
+            yolo_output_conv = Conv2dUnit(64 * (2**out_layer_num) // (2**i) * 2, num_filters, 1, stride=1, bias_attr=True, act=None,
+                                          bias_init=bias_init, name="yolo_output.{}.conv".format(i))
             self.detection_blocks.append(_detection_block)
             self.yolo_output_convs.append(yolo_output_conv)
 
 
             if i < out_layer_num - 1:
                 # do not perform upsample in the last detection_block
-                conv_unit = Conv2dUnit(64 * (2**out_layer_num) // (2**i), 256 // (2**i), 1, stride=1, bn=bn, gn=gn, af=af, act='leaky')
+                conv_unit = Conv2dUnit(64 * (2**out_layer_num) // (2**i), 256 // (2**i), 1, stride=1, bn=bn, gn=gn, af=af, act='leaky', norm_decay=self.norm_decay, name="yolo_transition.{}".format(i))
                 # upsample
                 upsample = torch.nn.Upsample(scale_factor=2, mode='nearest')
                 self.upsample_layers.append(conv_unit)
@@ -503,30 +437,18 @@ class YOLOv3Head(torch.nn.Module):
 
 
         # nms
-        preds = None
-        nms_type = self.nms_cfg['nms_type']
+        preds = []
+        nms_cfg = copy.deepcopy(self.nms_cfg)
+        nms_type = nms_cfg.pop('nms_type')
+        batch_size = yolo_boxes.shape[0]
         if nms_type == 'matrix_nms':
-            batch_size = yolo_boxes.shape[0]
-            if batch_size == 1:
-                pred = matrix_nms(yolo_boxes[0], yolo_scores[0],
-                                  score_threshold=self.nms_cfg['score_threshold'],
-                                  post_threshold=self.nms_cfg['post_threshold'],
-                                  nms_top_k=self.nms_cfg['nms_top_k'],
-                                  keep_top_k=self.nms_cfg['keep_top_k'],
-                                  use_gaussian=self.nms_cfg['use_gaussian'],
-                                  gaussian_sigma=self.nms_cfg['gaussian_sigma'])
-                preds = pred.unsqueeze(0)
-            else:
-                preds = torch.zeros((batch_size, self.nms_cfg['keep_top_k'], 6), device=yolo_boxes.device) - 1.0
-                for i in range(batch_size):
-                    pred = matrix_nms(yolo_boxes[i], yolo_scores[i],
-                                      score_threshold=self.nms_cfg['score_threshold'],
-                                      post_threshold=self.nms_cfg['post_threshold'],
-                                      nms_top_k=self.nms_cfg['nms_top_k'],
-                                      keep_top_k=self.nms_cfg['keep_top_k'],
-                                      use_gaussian=self.nms_cfg['use_gaussian'],
-                                      gaussian_sigma=self.nms_cfg['gaussian_sigma'])
-                    preds[i, :pred.shape[0], :] = pred
+            for i in range(batch_size):
+                pred = matrix_nms(yolo_boxes[i, :, :], yolo_scores[i, :, :], **nms_cfg)
+                preds.append(pred)
+        # elif nms_type == 'multiclass_nms':
+        #     for i in range(batch_size):
+        #         pred = multiclass_nms(yolo_boxes[i, :, :], yolo_scores[i, :, :], **nms_cfg)
+        #         preds.append(pred)
         return preds
 
 

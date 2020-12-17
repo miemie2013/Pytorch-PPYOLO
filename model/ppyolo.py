@@ -24,6 +24,10 @@ class PPYOLO(torch.nn.Module):
             out = self.head.get_loss(body_feats, gt_box, gt_label, gt_score, targets)
         return out
 
+    def add_param_group(self, param_groups, base_lr, base_wd):
+        self.backbone.add_param_group(param_groups, base_lr, base_wd)
+        self.head.add_param_group(param_groups, base_lr, base_wd)
+
 
 
 

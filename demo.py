@@ -18,21 +18,13 @@ import argparse
 from config import *
 from model.decode_np import Decode
 from model.ppyolo import *
+from tools.argparser import ArgParser
 from tools.cocotools import get_classes
 
 import logging
 FORMAT = '%(asctime)s-%(levelname)s: %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
-
-parser = argparse.ArgumentParser(description='PPYOLO Infer Script')
-parser.add_argument('--use_gpu', type=bool, default=True)
-parser.add_argument('--config', type=int, default=0,
-                    choices=[0, 1, 2],
-                    help='0 -- ppyolo_2x.py;  1 -- ppyolo_1x.py;  2 -- ppyolo_r18vd.py;  ')
-args = parser.parse_args()
-config_file = args.config
-use_gpu = args.use_gpu
 
 
 def read_test_data(path_dir,
@@ -58,14 +50,16 @@ def save_img(filename, image):
     cv2.imwrite('images/res/' + filename, image)
 
 if __name__ == '__main__':
-    cfg = None
-    if config_file == 0:
-        cfg = PPYOLO_2x_Config()
-    elif config_file == 1:
-        cfg = PPYOLO_2x_Config()
-    elif config_file == 2:
-        cfg = PPYOLO_r18vd_Config()
-
+    parser = ArgParser()
+    use_gpu = parser.get_use_gpu()
+    cfg = parser.get_cfg()
+    print(torch.__version__)
+    import platform
+    sysstr = platform.system()
+    print(torch.cuda.is_available())
+    # 禁用cudnn就能解决Windows报错问题。Windows用户如果删掉之后不报CUDNN_STATUS_EXECUTION_FAILED，那就可以删掉。
+    if sysstr == 'Windows':
+        torch.backends.cudnn.enabled = False
 
     # 读取的模型
     model_path = cfg.test_cfg['model_path']
@@ -74,8 +68,16 @@ if __name__ == '__main__':
     draw_image = cfg.test_cfg['draw_image']
     draw_thresh = cfg.test_cfg['draw_thresh']
 
-    all_classes = get_classes(cfg.classes_path)
-    num_classes = len(all_classes)
+    # 打印，确认一下使用的配置
+    print('\n=============== config message ===============')
+    print('config file: %s' % str(type(cfg)))
+    print('model_path: %s' % model_path)
+    print('target_size: %d' % cfg.test_cfg['target_size'])
+    print('use_gpu: %s' % str(use_gpu))
+    print()
+
+    class_names = get_classes(cfg.classes_path)
+    num_classes = len(class_names)
 
 
     # 创建模型
@@ -83,13 +85,14 @@ if __name__ == '__main__':
     backbone = Backbone(**cfg.backbone)
     Head = select_head(cfg.head_type)
     head = Head(yolo_loss=None, nms_cfg=cfg.nms_cfg, **cfg.head)
-    ppyolo = PPYOLO(backbone, head)
+    model = PPYOLO(backbone, head)
     if use_gpu:
-        ppyolo = ppyolo.cuda()
-    ppyolo.load_state_dict(torch.load(model_path))
-    ppyolo.eval()  # 必须调用model.eval()来设置dropout和batch normalization layers在运行推理前，切换到评估模式. 不这样做的化会产生不一致的推理结果.
+        model = model.cuda()
+    model.load_state_dict(torch.load(model_path))
+    model.eval()  # 必须调用model.eval()来设置dropout和batch normalization layers在运行推理前，切换到评估模式。
+    head.set_dropblock(is_test=True)
 
-    _decode = Decode(ppyolo, all_classes, use_gpu, cfg, for_test=True)
+    _decode = Decode(model, class_names, use_gpu, cfg, for_test=True)
 
     if not os.path.exists('images/res/'): os.mkdir('images/res/')
     path_dir = os.listdir('images/test')

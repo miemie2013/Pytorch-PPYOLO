@@ -13,12 +13,13 @@ import threading
 import datetime
 from collections import OrderedDict
 import os
-import argparse
+import json
 
 from config import *
 from model.EMA import ExponentialMovingAverage
 
 from model.ppyolo import PPYOLO
+from tools.argparser import ArgParser
 from tools.cocotools import get_classes, catid2clsid, clsid2catid
 from model.decode_np import Decode
 from tools.cocotools import eval
@@ -30,25 +31,6 @@ import logging
 FORMAT = '%(asctime)s-%(levelname)s: %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
-
-parser = argparse.ArgumentParser(description='PPYOLO Training Script')
-parser.add_argument('--use_gpu', type=bool, default=True)
-parser.add_argument('--config', type=int, default=0,
-                    choices=[0, 1, 2],
-                    help='0 -- ppyolo_2x.py;  1 -- ppyolo_1x.py;  2 -- ppyolo_r18vd.py;  ')
-args = parser.parse_args()
-config_file = args.config
-use_gpu = args.use_gpu
-
-
-import platform
-sysstr = platform.system()
-print(torch.cuda.is_available())
-print(torch.__version__)
-# 禁用cudnn就能解决Windows报错问题。Windows用户如果删掉之后不报CUDNN_STATUS_EXECUTION_FAILED，那就可以删掉。
-if sysstr == 'Windows':
-    torch.backends.cudnn.enabled = False
-
 
 
 def multi_thread_op(i, num_threads, batch_size, samples, context, with_mixup, sample_transforms, batch_transforms,
@@ -186,16 +168,48 @@ def load_weights(model, model_path):
 
 
 if __name__ == '__main__':
-    cfg = None
-    if config_file == 0:
-        cfg = PPYOLO_2x_Config()
-    elif config_file == 1:
-        cfg = PPYOLO_2x_Config()
-    elif config_file == 2:
-        cfg = PPYOLO_r18vd_Config()
+    parser = ArgParser()
+    use_gpu = parser.get_use_gpu()
+    cfg = parser.get_cfg()
+    print(torch.__version__)
+    import platform
+    sysstr = platform.system()
+    print(torch.cuda.is_available())
+    # 禁用cudnn就能解决Windows报错问题。Windows用户如果删掉之后不报CUDNN_STATUS_EXECUTION_FAILED，那就可以删掉。
+    if sysstr == 'Windows':
+        torch.backends.cudnn.enabled = False
 
-    class_names = get_classes(cfg.classes_path)
-    num_classes = len(class_names)
+    # 打印，确认一下使用的配置
+    print('\n=============== config message ===============')
+    print('config file: %s' % str(type(cfg)))
+    if cfg.train_cfg['model_path'] is not None:
+        print('pretrained_model: %s' % cfg.train_cfg['model_path'])
+    else:
+        print('pretrained_model: None')
+    print('use_gpu: %s' % str(use_gpu))
+    print()
+
+    # 种类id
+    _catid2clsid = {}
+    _clsid2catid = {}
+    _clsid2cname = {}
+    with open(cfg.val_path, 'r', encoding='utf-8') as f2:
+        dataset_text = ''
+        for line in f2:
+            line = line.strip()
+            dataset_text += line
+        eval_dataset = json.loads(dataset_text)
+        categories = eval_dataset['categories']
+        for clsid, cate_dic in enumerate(categories):
+            catid = cate_dic['id']
+            cname = cate_dic['name']
+            _catid2clsid[catid] = clsid
+            _clsid2catid[clsid] = catid
+            _clsid2cname[clsid] = cname
+    class_names = []
+    num_classes = len(_clsid2cname.keys())
+    for clsid in range(num_classes):
+        class_names.append(_clsid2cname[clsid])
 
     # 步id，无需设置，会自动读。
     iter_id = 0
@@ -213,27 +227,34 @@ if __name__ == '__main__':
     yolo_loss = Loss(iou_loss=iou_loss, iou_aware_loss=iou_aware_loss, **cfg.yolo_loss)
     Head = select_head(cfg.head_type)
     head = Head(yolo_loss=yolo_loss, is_train=True, nms_cfg=cfg.nms_cfg, **cfg.head)
-    ppyolo = PPYOLO(backbone, head)
-    _decode = Decode(ppyolo, class_names, use_gpu, cfg, for_test=False)
+    model = PPYOLO(backbone, head)
+    _decode = Decode(model, class_names, use_gpu, cfg, for_test=False)
 
     # 加载权重
     if cfg.train_cfg['model_path'] is not None:
         # 加载参数, 跳过形状不匹配的。
-        load_weights(ppyolo, cfg.train_cfg['model_path'])
+        load_weights(model, cfg.train_cfg['model_path'])
 
         strs = cfg.train_cfg['model_path'].split('step')
         if len(strs) == 2:
             iter_id = int(strs[1][:8])
 
-        # 冻结，使得需要的显存减少。低显存的卡建议这样配置。
-        backbone.freeze()
+    # 冻结，使得需要的显存减少。低显存的卡建议这样配置。
+    backbone.freeze()
 
     if use_gpu:   # 如果有gpu可用，模型（包括了权重weight）存放在gpu显存里
-        ppyolo = ppyolo.cuda()
+        model = model.cuda()
+
+    # aaaaaaaa = filter(lambda p: p.requires_grad, ppyolo.parameters())
+
+    param_groups = []
+    model.add_param_group(param_groups, cfg.learningRate['base_lr'], cfg.optimizerBuilder['regularizer']['factor'])
+
+    optimizer = torch.optim.SGD(param_groups, lr=cfg.train_cfg['lr'])   # requires_grad==True 的参数才可以被更新
 
     ema = None
     if cfg.use_ema:
-        ema = ExponentialMovingAverage(ppyolo, cfg.ema_decay)
+        ema = ExponentialMovingAverage(model, cfg.ema_decay)
         ema.register()
 
     # 种类id
@@ -302,8 +323,6 @@ if __name__ == '__main__':
     # 保存模型的目录
     if not os.path.exists('./weights'): os.mkdir('./weights')
 
-    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, ppyolo.parameters()), lr=cfg.train_cfg['lr'])   # requires_grad==True 的参数才可以被更新
-
     time_stat = deque(maxlen=20)
     start_time = time.time()
     end_time = time.time()
@@ -362,7 +381,7 @@ if __name__ == '__main__':
                 targets = [target0, target1, target2]
             else:
                 targets = [target0, target1]
-            losses = ppyolo(images, None, False, gt_bbox, gt_class, gt_score, targets)
+            losses = model(images, None, False, gt_bbox, gt_class, gt_score, targets)
             loss_xy = losses['loss_xy']
             loss_wh = losses['loss_wh']
             loss_obj = losses['loss_obj']
@@ -406,7 +425,7 @@ if __name__ == '__main__':
                 if cfg.use_ema:
                     ema.apply()
                 save_path = './weights/step%.8d.pt' % iter_id
-                torch.save(ppyolo.state_dict(), save_path)
+                torch.save(model.state_dict(), save_path)
                 if cfg.use_ema:
                     ema.restore()
                 path_dir = os.listdir('./weights')
@@ -426,11 +445,11 @@ if __name__ == '__main__':
             if iter_id % cfg.train_cfg['eval_iter'] == 0:
                 if cfg.use_ema:
                     ema.apply()
-                ppyolo.eval()   # 切换到验证模式
+                model.eval()   # 切换到验证模式
                 head.set_dropblock(is_test=True)
                 box_ap = eval(_decode, val_images, cfg.val_pre_path, cfg.val_path, cfg.eval_cfg['eval_batch_size'], _clsid2catid, cfg.eval_cfg['draw_image'], cfg.eval_cfg['draw_thresh'])
                 logger.info("box ap: %.3f" % (box_ap[0], ))
-                ppyolo.train()  # 切换到训练模式
+                model.train()  # 切换到训练模式
                 head.set_dropblock(is_test=False)
 
                 # 以box_ap作为标准
@@ -438,7 +457,7 @@ if __name__ == '__main__':
                 if ap[0] > best_ap_list[0]:
                     best_ap_list[0] = ap[0]
                     best_ap_list[1] = iter_id
-                    torch.save(ppyolo.state_dict(), './weights/best_model.pt')
+                    torch.save(model.state_dict(), './weights/best_model.pt')
                 if cfg.use_ema:
                     ema.restore()
                 logger.info("Best test ap: {}, in iter: {}".format(best_ap_list[0], best_ap_list[1]))

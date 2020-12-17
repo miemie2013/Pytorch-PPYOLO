@@ -85,19 +85,29 @@ def data_clean(coco, img_ids, catid2clsid, image_dir):
     logger.info('{} samples in train set.'.format(ct))
     return records
 
-def get_samples(train_records, train_indexes, step, batch_size, with_mixup):
+def get_samples(train_records, train_indexes, step, batch_size, iter_id,
+                with_mixup, with_cutmix, mixup_steps, cutmix_steps):
     indexes = train_indexes[step * batch_size:(step + 1) * batch_size]
     samples = []
     for i in range(batch_size):
         pos = indexes[i]
         sample = copy.deepcopy(train_records[pos])
+        sample["curr_iter"] = iter_id
 
         # 为mixup数据增强做准备
-        if with_mixup:
+        if with_mixup and iter_id <= mixup_steps:
             num = len(train_indexes)
             mix_idx = np.random.randint(1, num)
             mix_idx = train_indexes[(mix_idx + step * batch_size + i) % num]   # 为了不选到自己
             sample['mixup'] = copy.deepcopy(train_records[mix_idx])
+            sample['mixup']["curr_iter"] = iter_id
+
+        # 为cutmix数据增强做准备
+        if with_cutmix and iter_id <= cutmix_steps:
+            num = len(train_indexes)
+            mix_idx = np.random.randint(1, num)
+            sample['cutmix'] = copy.deepcopy(train_records[mix_idx])
+            sample['cutmix']["curr_iter"] = iter_id
 
         samples.append(sample)
     return samples
