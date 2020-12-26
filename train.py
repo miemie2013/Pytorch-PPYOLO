@@ -392,8 +392,6 @@ if __name__ == '__main__':
 
 
     best_ap_list = [0.0, 0]  #[map, iter]
-    train_speed_count = 0
-    train_speed_start = 0.0
     while True:   # 无限个epoch
         for step in range(train_steps):
             iter_id += 1
@@ -447,30 +445,16 @@ if __name__ == '__main__':
 
             # ==================== log ====================
             if iter_id % 20 == 0:
+                speed = (1.0 / time_cost)
+                speed *= batch_size
+                speed_msg = '%.3f imgs/s.' % (speed,)
                 lr = optimizer.param_groups[0]['lr']
                 each_loss = ''
                 for loss_name in loss_names.keys():
                     loss_value = loss_names[loss_name]
                     each_loss += ' %s: %.3f,' % (loss_name, loss_value)
-                strs = 'Train iter: {}, lr: {:.9f}, all_loss: {:.3f},{} eta: {}'.format(iter_id, lr, _all_loss, each_loss, eta)
+                strs = 'Train iter: {}, lr: {:.9f}, all_loss: {:.3f},{} eta: {}, speed: {}'.format(iter_id, lr, _all_loss, each_loss, eta, speed_msg)
                 logger.info(strs)
-
-            # ==================== train_speed ====================
-            mod_iter_id = iter_id % 1000
-            step_iter = 200   # 每隔200步计算一下训练速度。
-            if mod_iter_id >= 20:   # 前20步热身。
-                if mod_iter_id == 20:
-                    train_speed_count = 0
-                    train_speed_start = time.time()
-                elif mod_iter_id > 825:
-                    pass
-                else:
-                    train_speed_count += 1
-                    if train_speed_count % step_iter == 0:
-                        sts = train_speed_count // step_iter
-                        sts *= step_iter
-                        cost = time.time() - train_speed_start
-                        logger.info('Train Speed: %.3f steps per second.' % ((sts / cost), ))
 
             # ==================== save ====================
             if iter_id % cfg.train_cfg['save_iter'] == 0:

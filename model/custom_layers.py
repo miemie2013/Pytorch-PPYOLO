@@ -604,7 +604,11 @@ class DCNv2(torch.nn.Module):
         offset_y = offset_yx[:, :, :, :, :1]  # [N, out_H, out_W, kH*kW, 1]
         offset_x = offset_yx[:, :, :, :, 1:]  # [N, out_H, out_W, kH*kW, 1]
 
-        # 最终位置
+        # 最终位置。其实也不是最终位置，为了更快速实现DCNv2，还要给y坐标（代表行号）加上图片的偏移来一次性抽取，避免for循环遍历每一张图片。
+        start_pos_y.requires_grad = False
+        start_pos_x.requires_grad = False
+        filter_inner_offset_y.requires_grad = False
+        filter_inner_offset_x.requires_grad = False
         pos_y = start_pos_y + filter_inner_offset_y + offset_y  # [N, out_H, out_W, kH*kW, 1]
         pos_x = start_pos_x + filter_inner_offset_x + offset_x  # [N, out_H, out_W, kH*kW, 1]
         pos_y = torch.clamp(pos_y, 0.0, H + padding * 2 - 1.0)
@@ -612,52 +616,50 @@ class DCNv2(torch.nn.Module):
         ytxt = torch.cat([pos_y, pos_x], -1)  # [N, out_H, out_W, kH*kW, 2]
 
         pad_x = pad_x.permute(0, 2, 3, 1)  # [N, pad_x_H, pad_x_W, C]
+        pad_x = torch.reshape(pad_x, (N*pad_x_H, pad_x_W, in_C))  # [N*pad_x_H, pad_x_W, C]
 
-        new_x = torch.zeros((N, out_H, out_W, in_C, kH, kW), dtype=torch.float32, device=x.device)
+        ytxt = torch.reshape(ytxt, (N * out_H * out_W * kH * kW, 2))  # [N*out_H*out_W*kH*kW, 2]
+        _yt = ytxt[:, :1]  # [N*out_H*out_W*kH*kW, 1]
+        _xt = ytxt[:, 1:]  # [N*out_H*out_W*kH*kW, 1]
 
-        mask = torch.reshape(mask, (N, out_H, out_W, kH, kW))  # [N, out_H, out_W, kH, kW]
+        # 为了避免使用for循环遍历每一张图片，还要给y坐标（代表行号）加上图片的偏移来一次性抽取出更兴趣的像素。
+        row_offset = torch.arange(0, N, dtype=torch.float32, device=dcn_weight.device) * pad_x_H  # [N, ]
+        row_offset = row_offset[:, np.newaxis, np.newaxis].repeat((1, out_H * out_W * kH * kW, 1))  # [N, out_H*out_W*kH*kW, 1]
+        row_offset = torch.reshape(row_offset, (N * out_H * out_W * kH * kW, 1))  # [N*out_H*out_W*kH*kW, 1]
+        row_offset.requires_grad = False
+        _yt += row_offset
 
-        for bid in range(N):
-            pad_x2 = pad_x[bid]  # [pad_x_H, pad_x_W, in_C]
-            mask2 = mask[bid]  # [out_H, out_W, kH, kW]
-            _ytxt = ytxt[bid]  # [out_H, out_W, kH*kW, 2]
+        _y1 = torch.floor(_yt)
+        _x1 = torch.floor(_xt)
+        _y2 = _y1 + 1.0
+        _x2 = _x1 + 1.0
+        _y1x1 = torch.cat([_y1, _x1], -1)
+        _y1x2 = torch.cat([_y1, _x2], -1)
+        _y2x1 = torch.cat([_y2, _x1], -1)
+        _y2x2 = torch.cat([_y2, _x2], -1)
 
-            _ytxt = torch.reshape(_ytxt, (out_H * out_W * kH * kW, 2))  # [out_H*out_W*kH*kW, 2]
-            _yt = _ytxt[:, :1]
-            _xt = _ytxt[:, 1:]
-            _y1 = torch.floor(_yt)
-            _x1 = torch.floor(_xt)
-            _y2 = _y1 + 1.0
-            _x2 = _x1 + 1.0
-            _y1x1 = torch.cat([_y1, _x1], -1)
-            _y1x2 = torch.cat([_y1, _x2], -1)
-            _y2x1 = torch.cat([_y2, _x1], -1)
-            _y2x2 = torch.cat([_y2, _x2], -1)
+        _y1x1_int = _y1x1.long()   # [N*out_H*out_W*kH*kW, 2]
+        v1 = self.gather_nd(pad_x, _y1x1_int)   # [N*out_H*out_W*kH*kW, in_C]
+        _y1x2_int = _y1x2.long()   # [N*out_H*out_W*kH*kW, 2]
+        v2 = self.gather_nd(pad_x, _y1x2_int)   # [N*out_H*out_W*kH*kW, in_C]
+        _y2x1_int = _y2x1.long()   # [N*out_H*out_W*kH*kW, 2]
+        v3 = self.gather_nd(pad_x, _y2x1_int)   # [N*out_H*out_W*kH*kW, in_C]
+        _y2x2_int = _y2x2.long()   # [N*out_H*out_W*kH*kW, 2]
+        v4 = self.gather_nd(pad_x, _y2x2_int)   # [N*out_H*out_W*kH*kW, in_C]
 
-            _y1x1_int = _y1x1.long()  # [out_H*out_W*kH*kW, 2]
-            v1 = self.gather_nd(pad_x2, _y1x1_int)  # [out_H*out_W*kH*kW, in_C]
-            _y1x2_int = _y1x2.long()  # [out_H*out_W*kH*kW, 2]
-            v2 = self.gather_nd(pad_x2, _y1x2_int)  # [out_H*out_W*kH*kW, in_C]
-            _y2x1_int = _y2x1.long()  # [out_H*out_W*kH*kW, 2]
-            v3 = self.gather_nd(pad_x2, _y2x1_int)  # [out_H*out_W*kH*kW, in_C]
-            _y2x2_int = _y2x2.long()  # [out_H*out_W*kH*kW, 2]
-            v4 = self.gather_nd(pad_x2, _y2x2_int)  # [out_H*out_W*kH*kW, in_C]
-
-            lh = _yt - _y1  # [out_H*out_W*kH*kW, 1]
-            lw = _xt - _x1
-            hh = 1 - lh
-            hw = 1 - lw
-            w1 = hh * hw
-            w2 = hh * lw
-            w3 = lh * hw
-            w4 = lh * lw
-            value = w1 * v1 + w2 * v2 + w3 * v3 + w4 * v4  # [out_H*out_W*kH*kW, in_C]
-            mask2 = torch.reshape(mask2, (out_H * out_W * kH * kW, 1))
-            value = value * mask2
-            value = torch.reshape(value, (out_H, out_W, kH, kW, in_C))
-            value = value.permute(0, 1, 4, 2, 3)
-            new_x[bid, :, :, :, :, :] = value
-
+        lh = _yt - _y1  # [N*out_H*out_W*kH*kW, 1]
+        lw = _xt - _x1
+        hh = 1 - lh
+        hw = 1 - lw
+        w1 = hh * hw
+        w2 = hh * lw
+        w3 = lh * hw
+        w4 = lh * lw
+        value = w1 * v1 + w2 * v2 + w3 * v3 + w4 * v4   # [N*out_H*out_W*kH*kW, in_C]
+        mask = torch.reshape(mask, (N * out_H * out_W * kH * kW, 1))
+        value = value * mask
+        value = torch.reshape(value, (N, out_H, out_W, kH, kW, in_C))
+        new_x = value.permute(0, 1, 2, 5, 3, 4)   # [N, out_H, out_W, in_C, kH, kW]
 
         # 旧的方案，使用逐元素相乘，慢！
         # new_x = torch.reshape(new_x, (N, out_H, out_W, in_C * kH * kW))  # [N, out_H, out_W, in_C * kH * kW]
