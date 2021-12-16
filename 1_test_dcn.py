@@ -29,7 +29,7 @@ from paddle.fluid.initializer import Constant
 from paddle.fluid.regularizer import L2Decay
 from paddle.fluid.layers.learning_rate_scheduler import _decay_step_counter
 from paddle.fluid.optimizer import ExponentialMovingAverage
-
+import paddle
 
 import torch
 from model.custom_layers import Conv2dUnit, DCNv2
@@ -57,6 +57,7 @@ class MyNet(torch.nn.Module):
 
 
 if __name__ == '__main__':
+    paddle.enable_static()
     use_gpu = False
 
     lr = 0.1
