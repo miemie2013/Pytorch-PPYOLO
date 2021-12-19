@@ -1,5 +1,9 @@
 # Pytorch-PPYOLO
 
+## 新闻
+本项目已经迁移到[miemiedetection](https://github.com/miemie2013/miemiedetection)进行更新维护，正在加入PPYOLOv2!miemiedetection是女装大佬[咩酱](https://github.com/miemie2013)基于[YOLOX](https://github.com/Megvii-BaseDetection/YOLOX)进行二次开发的个人检测库（使用的深度学习框架为pytorch），以女装大佬咩酱的名字命名。
+
+
 ## 概述
 PP-YOLO是[PaddleDetection](https://github.com/PaddlePaddle/PaddleDetection)优化和改进的YOLOv3的模型，其精度(COCO数据集mAP)和推理速度均优于YOLOv4模型。
 
